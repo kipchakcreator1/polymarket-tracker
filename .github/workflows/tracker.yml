@@ -1,8 +1,8 @@
-name: Polymarket Smart Tracker v3
+name: Polymarket Smart Tracker v3.1 Fresh
 
 on:
   schedule:
-    - cron: '3-59/15 * * * *'
+    - cron: '2-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -50,9 +50,13 @@ jobs:
           MIN_SELL_USD: '20'
           MAX_ALERTS: '6'
           MAX_PER_WALLET: '2'
-          GROUP_SECONDS: '360'
-          MAX_SIGNAL_AGE: '3600'
+          GROUP_SECONDS: '60'
+          MAX_SIGNAL_AGE: '300'
+          VERIFY_MARKET: '1'
           PAGES_PER_WALLET: '10'
+          PAPER_FRICTION_PCT: '0.01' # hypothetical sensitivity only; NOT actual fees
+          PAPER_SETTLEMENT_CHECKS: '12'
+          PAPER_MAX_RECORDS: '2000'
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python3 smart_tracker_v3.py --notify-status
