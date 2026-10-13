@@ -1,87 +1,52 @@
-
-name: Polymarket Smart Money Tracker
+name: Polymarket Smart Money Tracker v2
 
 on:
   schedule:
-    - cron: "2-59/5 * * * *"
+    - cron: "3-59/5 * * * *"
   workflow_dispatch:
-    inputs:
-      min_usd:
-        description: "Minimum trade size in USD"
-        default: "200"
 
 permissions:
   contents: read
 
 concurrency:
-  group: whale-tracker
+  group: polymarket-smart-tracker-v2
   cancel-in-progress: false
 
 jobs:
   poll:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Restore DB cache
+      - name: Restore historical tracker state
         uses: actions/cache@v4
         with:
-          path: tracker.db
-          key: tracker-db-${{ github.run_id }}
+          path: state/smart_tracker_v2.json
+          key: polymarket-smart-v2-${{ github.run_id }}
           restore-keys: |
-            tracker-db-
+            polymarket-smart-v2-
 
-      - name: Test Telegram
-        if: github.event_name == 'workflow_dispatch'
+      - name: Discover, score and monitor Polymarket traders
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CANDIDATE_TARGET: "1250"
+          SCORE_BATCH: "80"
+          MAX_TRACKED: "250"
+          MIN_WINRATE: "0.70"
+          MIN_CLOSED: "30"
+          MIN_REALIZED_PNL: "100"
+          MIN_TRADE_USD: "1"
+          SAMPLE_CLOSED: "100"
+          MAX_ALERTS: "15"
         run: |
-          python3 - <<'PY'
-          import notifier
-          import sys
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python3 smart_tracker_v2.py --notify-status
+          else
+            python3 smart_tracker_v2.py
+          fi
 
-          ok = notifier.send_telegram(
-              "TEST: Polymarket Tracker connected!"
-          )
-          print("TELEGRAM:", "OK" if ok else "FAILED")
-          if not ok:
-              sys.exit(1)
-          PY
-
-      - name: Count traders
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          python3 - <<'PY'
-          from polymarket_api import fetch_trades, usd
-
-          trades = fetch_trades(limit=1000)
-          wallets = {
-              t.get("proxyWallet")
-              for t in trades if t.get("proxyWallet")
-          }
-          candidates = [
-              t for t in trades if usd(t) >= 200
-          ]
-
-          print("TRADES:", len(trades))
-          print("UNIQUE TRADERS:", len(wallets))
-          print("TRADES OVER $200:", len(candidates))
-          PY
-
-      - name: Run poll
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python3 whale_tracker.py poll \
-            --min-usd "${{ github.event.inputs.min_usd || '200' }}" \
-            --smart \
-            --min-pnl 1000 \
-            --min-winrate 0.70 \
-            --min-closed 30 \
-            --lookback 1000
