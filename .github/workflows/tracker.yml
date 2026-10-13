@@ -1,52 +1,73 @@
-name: Polymarket Smart Money Tracker v2
+name: Polymarket Smart Tracker v3
 
 on:
   schedule:
-    - cron: "3-59/5 * * * *"
+    - cron: '3-59/15 * * * *'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: polymarket-smart-tracker-v2
+  group: polymarket-smart-tracker-single-writer
   cancel-in-progress: false
 
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Restore historical tracker state
-        uses: actions/cache@v4
+      # One-time optional import of v2's publicly sourced candidate list.
+      - name: Restore old candidate list (first run only)
+        if: ${{ hashFiles('state/smart_tracker_v3.json') == '' }}
+        uses: actions/cache/restore@v4
         with:
           path: state/smart_tracker_v2.json
-          key: polymarket-smart-v2-${{ github.run_id }}
+          key: migrate-v2-do-not-match-exactly
           restore-keys: |
             polymarket-smart-v2-
 
-      - name: Discover, score and monitor Polymarket traders
+      - name: Monitor public trades and Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          CANDIDATE_TARGET: "1250"
-          SCORE_BATCH: "80"
-          MAX_TRACKED: "250"
-          MIN_WINRATE: "0.70"
-          MIN_CLOSED: "30"
-          MIN_REALIZED_PNL: "100"
-          MIN_TRADE_USD: "1"
-          SAMPLE_CLOSED: "100"
-          MAX_ALERTS: "15"
+          CANDIDATE_TARGET: '1250'
+          SCORE_BATCH: '80'
+          MAX_TRACKED: '50'
+          MONITOR_MAX: '50'
+          MIN_WINRATE: '0.70'
+          MIN_CLOSED: '30'
+          MIN_REALIZED_PNL: '100'
+          SAMPLE_CLOSED: '100'
+          MIN_BUY_USD: '100'
+          MIN_SELL_USD: '20'
+          MAX_ALERTS: '6'
+          MAX_PER_WALLET: '2'
+          GROUP_SECONDS: '360'
+          MAX_SIGNAL_AGE: '3600'
+          PAGES_PER_WALLET: '10'
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python3 smart_tracker_v2.py --notify-status
+            python3 smart_tracker_v3.py --notify-status
           else
-            python3 smart_tracker_v2.py
+            python3 smart_tracker_v3.py
+          fi
+
+      - name: Save public state to GitHub
+        if: success()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add state/smart_tracker_v3.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: update public tracker state [skip ci]'
+            git push origin HEAD:main
           fi
 
