@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Polymarket Smart Tracker 3.0 revised: READ-ONLY research alerts.
+"""Polymarket Smart Tracker 3.1: READ-ONLY alerts + virtual $1 paper portfolio.
 
 Needs smart_tracker_v2.py for wallet discovery/scoring (trading PnL only).
 Reads cursor-paginated public /v2/trades, groups by condition ID (a MARKET,
@@ -18,12 +18,14 @@ import time
 from pathlib import Path
 
 import smart_tracker_v2 as v2
+import paper_tracker_v31 as paper
 
 VERSION = 31
 STATE_FILE = 'state/smart_tracker_v3.json'
 POLL_OVERLAP = 120
-GROUP_SECONDS = int(os.getenv('GROUP_SECONDS', '360'))
-MAX_SIGNAL_AGE = int(os.getenv('MAX_SIGNAL_AGE', '3600'))
+VERIFY_MARKET = os.getenv("VERIFY_MARKET", "1") == "1"
+GROUP_SECONDS = int(os.getenv('GROUP_SECONDS', '60'))
+MAX_SIGNAL_AGE = int(os.getenv('MAX_SIGNAL_AGE', '300'))
 MIN_BUY_USD = float(os.getenv('MIN_BUY_USD', '100'))
 MIN_SELL_USD = float(os.getenv('MIN_SELL_USD', '20'))
 MAX_ALERTS = int(os.getenv('MAX_ALERTS', '6'))
@@ -142,6 +144,36 @@ def get_positions(wallet, conditions):
         else:
             raise RuntimeError('/v2/positions pagination cap reached')
     return dict(result)
+
+
+def market_accepts_orders(condition):
+    """Gamma market guard; fail closed on unknown/unavailable data.
+
+    NOTE: open now does not imply the event is in the future, that the
+    quoted trade price is still available, or that the market is liquid.
+    """
+    if not VERIFY_MARKET:
+        return True
+    rows = v2.request_json('/markets', {'condition_ids': condition},
+                           base='https://gamma-api.polymarket.com')
+    if not isinstance(rows, list):
+        raise RuntimeError('Unexpected Gamma /markets response')
+    matching = [r for r in rows if isinstance(r, dict) and
+                str(r.get('conditionId', '')).lower() == condition.lower()]
+    if len(matching) != 1:
+        raise RuntimeError('Gamma market not found or ambiguous')
+    m = matching[0]
+    if not isinstance(m.get('active'), bool) or not isinstance(m.get('closed'), bool):
+        raise RuntimeError('Gamma market active/closed status missing')
+    if m['closed'] or not m['active']:
+        return False
+    if m.get('acceptingOrders') is False or m.get('enableOrderBook') is False:
+        return False
+    # Some Gamma data sets omit acceptingOrders. Prefer a positive confirmation
+    # for research trade alerts rather than a misleading "available" label.
+    if m.get('acceptingOrders') is not True:
+        raise RuntimeError('Gamma acceptingOrders status unavailable')
+    return True
 
 
 def empty_group(wallet,condition,t):
@@ -290,9 +322,26 @@ def candidate_groups(state,now):
 
 def dispatch(state,now):
     selected,ready,removed=candidate_groups(state,now)
-    sent=0;failed=0;snaps={}
+    sent=0;failed=0;snaps={};market_skipped=0;market_errors=0
     for gid,g,kind in selected:
         wallet=g['wallet'];condition=g['condition']
+        # Do not label old executions or non-tradable markets as actionable.
+        if now-g['last']>MAX_SIGNAL_AGE:
+            del state['pending'][gid]
+            market_skipped += 1
+            continue
+        try:
+            orderable = market_accepts_orders(condition)
+        except Exception as exc:
+            market_errors += 1
+            print('MARKET WARNING:', condition[:20], str(exc)[:160])
+            # Leave pending until the freshness limit expires; never guess.
+            continue
+        if not orderable:
+            print('MARKET CLOSED/PAUSED: discarding stale alert', condition[:20])
+            del state['pending'][gid]
+            market_skipped += 1
+            continue
         if wallet not in snaps:
             conditions={x[1]['condition'] for x in selected if x[1]['wallet']==wallet}
             try:
@@ -308,19 +357,23 @@ def dispatch(state,now):
                 kind='MIXED'
             elif not any(holdings.get(t,0)>=0.01 for t in positive):
                 kind='UNHELD'
+        paper_candidate,paper_note=paper.prepare(state,g,kind,holdings,now)
         message=format_alert(g,kind,holdings,state['wallets'].get(wallet),now)
+        if paper_note:
+            message+='\n'+html.escape(paper_note)
         try:
             v2.send_telegram(message)
         except Exception as exc:
             print('TELEGRAM ERROR:',type(exc).__name__,str(exc)[:100]);failed+=1
             continue  # retain unsent group in queue; retry
+        paper.commit(state,paper_candidate)
         if kind in ('BUY','MIXED','CHURN'):
             state['tracking'][gid]=now
         elif kind=='SELL' and holdings is not None and not any(x>=0.01 for x in holdings.values()):
             state['tracking'].pop(gid,None)
         del state['pending'][gid]
         sent+=1
-    return {'ready':ready,'sent':sent,'failed':failed,'queue':len(state['pending']),'removed':removed}
+    return {'ready':ready,'sent':sent,'failed':failed,'queue':len(state['pending']),'removed':removed,'market_skipped':market_skipped,'market_errors':market_errors}
 
 
 def prune(state,now):
@@ -351,17 +404,21 @@ def main():
             watch_errors+=1
             print('WATCH ERROR:',wallet[:12],str(exc))
     outcome=dispatch(state,now)
+    paper_updates=paper.refresh_settlements(state,now)
     prune(state,now)
     v2.save_state(args.state,state)
     summary=(f'V3: candidates={len(state["wallets"])} scored={discovered} '
              f'watching={len(eligible)} new_fills={fills} baselines={baselines} '
              f'alerts={outcome["sent"]} ready={outcome["ready"]} queued={outcome["queue"]} '
              f'pruned={outcome["removed"]} scoring_errors={score_errors} '
-             f'watch_errors={watch_errors} send_errors={outcome["failed"]}')
+             f'watch_errors={watch_errors} send_errors={outcome["failed"]} '
+             f'market_skipped={outcome["market_skipped"]} market_errors={outcome["market_errors"]}')
     print(summary)
+    print(paper.report(state,paper_updates))
+    print(paper.wallet_digest(state))
     if args.notify_status:
-        v2.send_telegram('<b>Tracker 3.0 revised — diagnostics</b>\n'+html.escape(summary)+
-                         '\nTrading wins are NOT prediction wins.')
+        v2.send_telegram('<b>Tracker 3.1 — diagnostics</b>\n'+html.escape(summary)+
+                         '\n'+html.escape(paper.report(state,paper_updates))+'\n'+html.escape(paper.wallet_digest(state))+'\nTrading wins are NOT prediction wins.')
     if eligible and watch_errors==len(eligible):
         raise RuntimeError('All wallet trade requests failed. Check /v2/trades connectivity.')
 
