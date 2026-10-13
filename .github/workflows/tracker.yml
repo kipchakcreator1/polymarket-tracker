@@ -1,14 +1,14 @@
-name: Polymarket Whale Tracker
 
-# Jalan otomatis tiap 10 menit + bisa di-trigger manual.
+name: Polymarket Smart Money Tracker
+
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "2-59/5 * * * *"
   workflow_dispatch:
     inputs:
       min_usd:
-        description: "Minimal USD buat dianggap whale"
-        default: "5000"
+        description: "Minimum trade size in USD"
+        default: "200"
 
 permissions:
   contents: read
@@ -27,7 +27,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Persist tracker.db antar run (buat dedup alert + deteksi spike/consensus)
       - name: Restore DB cache
         uses: actions/cache@v4
         with:
@@ -40,11 +39,11 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python3 whale_tracker.py poll \
-            --min-usd "${{ github.event.inputs.min_usd || '5000' }}" \
-            --smart --min-pnl 5000 --min-winrate 0.55 \
-            --spike-usd 25000 --spike-window 30 \
-            --consensus-wallets 3 --consensus-window 60 --consensus-min-usd 1000
-
+            --min-usd "${{ github.event.inputs.min_usd || '200' }}" \
+            --smart \
+            --min-pnl 1000 \
+            --min-winrate 0.70 \
+            --min-closed 30 \
+            --lookback 1000
