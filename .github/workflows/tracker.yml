@@ -35,6 +35,44 @@ jobs:
           restore-keys: |
             tracker-db-
 
+      - name: Test Telegram
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 - <<'PY'
+          import notifier
+          import sys
+
+          ok = notifier.send_telegram(
+              "TEST: Polymarket Tracker connected!"
+          )
+          print("TELEGRAM:", "OK" if ok else "FAILED")
+          if not ok:
+              sys.exit(1)
+          PY
+
+      - name: Count traders
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          python3 - <<'PY'
+          from polymarket_api import fetch_trades, usd
+
+          trades = fetch_trades(limit=1000)
+          wallets = {
+              t.get("proxyWallet")
+              for t in trades if t.get("proxyWallet")
+          }
+          candidates = [
+              t for t in trades if usd(t) >= 200
+          ]
+
+          print("TRADES:", len(trades))
+          print("UNIQUE TRADERS:", len(wallets))
+          print("TRADES OVER $200:", len(candidates))
+          PY
+
       - name: Run poll
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
