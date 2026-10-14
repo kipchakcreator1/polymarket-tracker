@@ -1,0 +1,272 @@
+{
+  "schema": "polymarket_shadow_v32_1",
+  "status": "read_only_single_snapshot",
+  "observed_at": 1792018309,
+  "source_snapshot": "test_branch_state_copy_read_only",
+  "qualified_from_snapshot": 395,
+  "sampled_rotating": 395,
+  "lookback_minutes": 70,
+  "rotation_epoch_hour": 497782,
+  "counts": {
+    "wallets_polled": 395,
+    "trade_rows_in_lookback": 1231,
+    "older_trades_observed_but_not_quoted": 1152,
+    "new_fresh_trade_rows": 79,
+    "grouped_ready": 15,
+    "grouped_selected": 15,
+    "unmatured_group_count": 3,
+    "quote_probes": 12,
+    "qualified_basic_passes": 0,
+    "quote_or_history_api_errors": 1
+  },
+  "reasons": {
+    "pre_high_buy_price": 3,
+    "pre_small_buy": 11,
+    "pre_untracked_or_small_sell": 1,
+    "wallet_gain_loss_ratio_unverified": 2,
+    "one_usd_below_minimum_or_unknown": 6,
+    "copy_price_moved_too_far": 1,
+    "paper_quote_or_holdings_unavailable": 1,
+    "wallet_history_below_threshold": 1,
+    "RuntimeError: Gamma market not found or ambiguous": 1,
+    "quote_probe_cap": 3
+  },
+  "observations": [
+    {
+      "wallet": "0xb595d09ce5bbc4d39e3b3d04e80c402d2c8d5922",
+      "condition": "0x39a6ec4dcf24c96d516c92ef6d9b5a9333cf71f4039c0fd4d395c539f9331783",
+      "source_ts": 1792018233,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "CDPJuniorFC vs. Deportivo Pereira: O/U 2.5",
+      "token_ids": [
+        "112108175633996462563818416758955050621884578261309636419076126177649547406217"
+      ],
+      "recent_closed_positions": 100,
+      "recent_profit_factor": null,
+      "status": "blocked",
+      "reason": "wallet_gain_loss_ratio_unverified",
+      "source_avg_buy": 0.9,
+      "current_avg_ask": null,
+      "best_ask": null,
+      "price_rise": null,
+      "one_usd_feasible": false
+    },
+    {
+      "wallet": "0x00110b8ef00db2a1a6bbe1198e52fc4eb5a84333",
+      "condition": "0x39a6ec4dcf24c96d516c92ef6d9b5a9333cf71f4039c0fd4d395c539f9331783",
+      "source_ts": 1792018233,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "CDPJuniorFC vs. Deportivo Pereira: O/U 2.5",
+      "token_ids": [
+        "112108175633996462563818416758955050621884578261309636419076126177649547406217"
+      ],
+      "recent_closed_positions": 100,
+      "recent_profit_factor": 2.7699,
+      "status": "blocked",
+      "reason": "one_usd_below_minimum_or_unknown",
+      "source_avg_buy": 0.737435,
+      "current_avg_ask": 0.74,
+      "best_ask": 0.74,
+      "price_rise": 0.002565,
+      "one_usd_feasible": false
+    },
+    {
+      "wallet": "0x88c4919de76e526d55a32c1f8afb439dd1f1129a",
+      "condition": "0x1a01bf78f56a507fcb666d564d8c8b91b0750679163ed6e96746102c9b7d285d",
+      "source_ts": 1792018221,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "Will Flávio Bolsonaro win the 2026 Brazilian presidential election?",
+      "token_ids": [
+        "109876868437950584369987384406356259939519193117253465815665152916226511121427"
+      ],
+      "recent_closed_positions": 100,
+      "recent_profit_factor": 19.4096,
+      "status": "blocked",
+      "reason": "one_usd_below_minimum_or_unknown",
+      "source_avg_buy": 0.849,
+      "current_avg_ask": 0.848,
+      "best_ask": 0.848,
+      "price_rise": -0.001,
+      "one_usd_feasible": false
+    },
+    {
+      "wallet": "0xddc38b82423310f5bbf2e2dc58745661a624029c",
+      "condition": "0x860ac0c0e7671d71a689334a6294eb1cbc5a965ebae2a3b24a53f8a9c0652221",
+      "source_ts": 1792018219,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "CDPJuniorFC vs. Deportivo Pereira: O/U 3.5",
+      "token_ids": [
+        "114324814117369128990013923053689860459124243891248297869886499359072070561413"
+      ],
+      "recent_closed_positions": 100,
+      "recent_profit_factor": 11.2079,
+      "status": "blocked",
+      "reason": "copy_price_moved_too_far",
+      "source_avg_buy": 0.37,
+      "current_avg_ask": 0.45,
+      "best_ask": 0.45,
+      "price_rise": 0.08,
+      "one_usd_feasible": false
+    },
+    {
+      "wallet": "0x032eb1bc893940263ad0b01889f262fc232f2a9e",
+      "condition": "0x273e61b98176580d99821fcd292c952c7bd4d67fc42bebcad6f927e167e5ff01",
+      "source_ts": 1792018216,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "Suns vs. Spurs",
+      "token_ids": [
+        "109846584022544702009386140037361383493848837970662861756228155545658211094334"
+      ],
+      "status": "blocked",
+      "reason": "paper_quote_or_holdings_unavailable",
+      "note": "📒 Paper: opposite/missing/exit position — skipped"
+    },
+    {
+      "wallet": "0x99f0d31fdced5b3a0e5ee2867730a6644a6c9495",
+      "condition": "0xc5a44a22f4282b6e9251fb7e746990180c04e3ec70851537d5c31e9d7b728724",
+      "source_ts": 1792018200,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "Shanghai Rolex Masters: Arthur Gea vs Alejandro Davidovich Fokina",
+      "token_ids": [
+        "76354666545439402305136200279561612861585975662446084721656267353679915353680"
+      ],
+      "recent_closed_positions": 100,
+      "recent_profit_factor": 1.0197,
+      "status": "blocked",
+      "reason": "wallet_history_below_threshold",
+      "source_avg_buy": 0.5,
+      "current_avg_ask": null,
+      "best_ask": null,
+      "price_rise": null,
+      "one_usd_feasible": false
+    },
+    {
+      "wallet": "0x47ab026767cc320ac6e62f6ec747d59cf4d795df",
+      "condition": "0x1a01bf78f56a507fcb666d564d8c8b91b0750679163ed6e96746102c9b7d285d",
+      "source_ts": 1792018189,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "Will Flávio Bolsonaro win the 2026 Brazilian presidential election?",
+      "token_ids": [
+        "109876868437950584369987384406356259939519193117253465815665152916226511121427"
+      ],
+      "recent_closed_positions": 100,
+      "recent_profit_factor": 2.3282,
+      "status": "blocked",
+      "reason": "one_usd_below_minimum_or_unknown",
+      "source_avg_buy": 0.847,
+      "current_avg_ask": 0.848,
+      "best_ask": 0.848,
+      "price_rise": 0.001,
+      "one_usd_feasible": false
+    },
+    {
+      "wallet": "0x08458f7e9d2858027de579e4c3ca305475496b6f",
+      "condition": "0xbb4d51e6364066d92eb6f9b8413dd7193de70966736044463b205834805a1f3b",
+      "source_ts": 1792018188,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "Will the Iranian regime fall before 2027?",
+      "token_ids": [
+        "106181075047366745139197108801635573283215248045056329679360376976893016488727"
+      ],
+      "recent_closed_positions": 100,
+      "recent_profit_factor": 2.4567,
+      "status": "blocked",
+      "reason": "one_usd_below_minimum_or_unknown",
+      "source_avg_buy": 0.94,
+      "current_avg_ask": 0.95,
+      "best_ask": 0.95,
+      "price_rise": 0.01,
+      "one_usd_feasible": false
+    },
+    {
+      "wallet": "0x918b42a06ff25eaaa4a79eca9da6a9de46f4ea63",
+      "condition": "0xaaf0db5e7bae0fc37513a46461025fbdef8f2a3878b12730d248e8210a932491",
+      "source_ts": 1792018176,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "Will New England Revolution win on 2026-10-14?",
+      "token_ids": [
+        "85615256813204995193700710513309356426390221636483955590154126381117455276792"
+      ],
+      "recent_closed_positions": 35,
+      "recent_profit_factor": null,
+      "status": "blocked",
+      "reason": "wallet_gain_loss_ratio_unverified",
+      "source_avg_buy": 0.319995,
+      "current_avg_ask": null,
+      "best_ask": null,
+      "price_rise": null,
+      "one_usd_feasible": false
+    },
+    {
+      "wallet": "0x26cf4a41eb49f0c560d32a2d2e4f45715e47c612",
+      "condition": "0x03cba3a94fdf6af5425fbe3fb7a6cc0d360000000000000000000000000000",
+      "source_ts": 1792018134,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "Counter-Strike: Aurora Gaming vs NIP (BO3) - Thunderpick World Championship Group A AND Map Handicap: MIBR (-1.5) vs BC.Game Esports (+1.5) ",
+      "token_ids": [
+        "1716738049196904590217636309835110833675793829683637442565692297434848296961"
+      ],
+      "status": "unknown_api_error",
+      "reason": "RuntimeError: Gamma market not found or ambiguous"
+    },
+    {
+      "wallet": "0x27f738fe203827445690339104aae35b20bc44b0",
+      "condition": "0x3ef12a05d823823e1304410e9f6c6ad7a85d809836e19edb225d6470802a5348",
+      "source_ts": 1792018072,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "Inter Miami CF vs. New York City FC: O/U 1.5",
+      "token_ids": [
+        "46769296003345805337030137259954035304163315789433368198589295322649713847308"
+      ],
+      "recent_closed_positions": 100,
+      "recent_profit_factor": 14.1197,
+      "status": "blocked",
+      "reason": "one_usd_below_minimum_or_unknown",
+      "source_avg_buy": 0.88,
+      "current_avg_ask": 0.89,
+      "best_ask": 0.89,
+      "price_rise": 0.01,
+      "one_usd_feasible": false
+    },
+    {
+      "wallet": "0x21f333307ac6d2e65ac82f014b3dd2b64cbc35e3",
+      "condition": "0x2fb999c55e6759de8cb7f861f375dd09cc8a20df198847576e4421a4514be62a",
+      "source_ts": 1792018053,
+      "observed_at": 1792018309,
+      "kind": "BUY",
+      "title": "Will FC Cincinnati win on 2026-10-14?",
+      "token_ids": [
+        "16864253401442124834965611079205181721094171910141657927547706074414139971524"
+      ],
+      "recent_closed_positions": 100,
+      "recent_profit_factor": 7.1983,
+      "status": "blocked",
+      "reason": "one_usd_below_minimum_or_unknown",
+      "source_avg_buy": 0.44,
+      "current_avg_ask": 0.45,
+      "best_ask": 0.45,
+      "price_rise": 0.01,
+      "one_usd_feasible": false
+    }
+  ],
+  "limitations": [
+    "No trades, Telegram, virtual portfolio commits, or production state writes",
+    "Single observation: no measured future outcome, profit or signal quality",
+    "Snapshot wallet scores may be stale; the rotating sample is not representative",
+    "Older trades in the lookback are counted but NEVER priced at the present ask",
+    "A passing basic gate does not imply a fair-value edge or actual executability",
+    "Only complete, recent, API-visible trades count; incomplete pages are errors",
+    "Paper $1 depth is hypothetical; it can fail exchange order minimums"
+  ]
+}
