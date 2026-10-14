@@ -1,4 +1,4 @@
-name: Polymarket Smart Tracker v3.1 Fresh
+name: Polymarket Smart Tracker v3.2 Testing
 
 on:
   schedule:
@@ -47,6 +47,10 @@ jobs:
           MIN_REALIZED_PNL: '100'
           SAMPLE_CLOSED: '100'
           MIN_BUY_USD: '100'
+          MAX_BUY_PRICE: '0.98'
+          MARKET_DISCOVERY_INTERVAL: '3600'
+          MARKET_DISCOVERY_ADD_LIMIT: '20'
+          MARKET_DISCOVERY_MAX_CANDIDATES: '2500'
           MIN_SELL_USD: '20'
           MAX_ALERTS: '6'
           MAX_PER_WALLET: '2'
@@ -72,6 +76,7 @@ jobs:
           git add state/smart_tracker_v3.json
           if ! git diff --cached --quiet; then
             git commit -m 'chore: update public tracker state [skip ci]'
-            git push origin HEAD:main
+            # Preserve the branch selected for manual workflow_dispatch runs.
+            git push origin "HEAD:$GITHUB_REF_NAME"
           fi
 
