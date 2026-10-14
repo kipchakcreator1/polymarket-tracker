@@ -65,7 +65,10 @@ def sample_eligible(state, eligible, now=None):
             break
         if now - meta.get('activity_checked_at', 0) < REFRESH:
             continue
+        if now - meta.get('activity_attempted_at', 0) < 1800:
+            continue
         checked += 1
+        meta['activity_attempted_at'] = now  # prevent failures from starving other wallets
         try:
             result = activity_profile(wallet, now)
         except Exception as exc:
