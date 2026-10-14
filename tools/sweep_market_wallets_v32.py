@@ -152,6 +152,10 @@ def main():
         'distinct_public_wallets':len(all_addresses),
         'already_known_wallets':len(all_addresses.intersection(known)),
         'new_candidate_wallets':len(new_candidates),
+        # Preserve public candidate addresses in an isolated research artifact.
+        # NEVER promote them automatically to the production watchlist.
+        'new_candidate_addresses':new_candidates[:20000],
+        'candidate_address_export_truncated':len(new_candidates)>20000,
         'new_wallets_selected_for_history_check':len(to_score),
         'new_wallet_history_api_errors':score_errors,
         'new_wallets_scored':len(samples),
