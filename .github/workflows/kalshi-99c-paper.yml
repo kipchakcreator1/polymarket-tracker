@@ -1,0 +1,64 @@
+name: Kalshi 99c $4 Paper Research
+
+# Deliberately only lives in kalshi-99c-paper initially.
+# The experiment can be activated from a main-branch schedule after tests.
+on:
+  push:
+    branches: [kalshi-99c-paper]
+    paths:
+      - 'kalshi99/**'
+      - '.github/workflows/kalshi-99c-paper.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kalshi-99c-paper-research-writer
+  cancel-in-progress: false
+
+jobs:
+  paper-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout experimental branch only
+        uses: actions/checkout@v4
+        with:
+          ref: kalshi-99c-paper
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile and run offline safety tests
+        run: |
+          python -m py_compile kalshi99/scanner.py kalshi99/test_scanner.py
+          python -m unittest kalshi99.test_scanner -v
+
+      - name: Scan public market data and run only $4 paper experiment
+        run: |
+          python -m kalshi99.scanner --paper-trade --pages 6 --page-size 500 --books 25
+
+      - name: Archive paper research report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalshi-99c-public-market-paper
+          path: artifacts/kalshi-99c-latest.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Persist paper state only to isolated research branch
+        if: success()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/kalshi-99c-state.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: Kalshi $4 paper only snapshot [skip ci]'
+            git pull --rebase origin kalshi-99c-paper
+            git push origin HEAD:kalshi-99c-paper
+          fi
