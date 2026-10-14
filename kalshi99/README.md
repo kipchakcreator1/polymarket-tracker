@@ -57,7 +57,7 @@ python -m kalshi99.scanner --paper-trade
 `.github/workflows/kalshi-99c-paper.yml` runs tests + read-only public API
 study on code pushes to `kalshi-99c-paper`, uploads the report as an Actions
 artifact, then commits **paper state to the research branch only**. An isolated main-branch workflow schedules the public-data paper scanner
-approximately every 15 minutes and checks out this research branch. Cron runs
+approximately every 5 minutes and checks out this research branch. Cron runs
 may be delayed. All state writes go to the research branch; other bots and their
 tokens are not used.
 
