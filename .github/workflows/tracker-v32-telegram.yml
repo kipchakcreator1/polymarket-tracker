@@ -1,0 +1,80 @@
+name: Tracker v3.2 Experimental Telegram (separate bot)
+
+# This file is staged ONLY on tracker-v3.2-testing.
+# GitHub schedules workflows from the default branch; a small, separately
+# approved workflow-only installation on main is required to activate it.
+on:
+  schedule:
+    - cron: '4-59/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: polymarket-tracker-v32-telegram-separate-writer
+  cancel-in-progress: false
+
+jobs:
+  signal-v32:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tracker-v3.2-testing
+          persist-credentials: true
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate separate bot and monitor public trades (no orders)
+        env:
+          TELEGRAM_V31_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_V32_BOT_TOKEN: ${{ secrets.TELEGRAM_V32_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CANDIDATE_TARGET: '1250'
+          SCORE_BATCH: '80'
+          MAX_TRACKED: '50'
+          MONITOR_MAX: '50'
+          MIN_WINRATE: '0.70'
+          MIN_CLOSED: '30'
+          MIN_REALIZED_PNL: '100'
+          SAMPLE_CLOSED: '100'
+          MIN_BUY_USD: '100'
+          MAX_BUY_PRICE: '0.98'
+          COPY_QUALITY_GATE: '1'
+          COPY_MIN_PROFIT_FACTOR: '1.15'
+          COPY_MAX_ABSOLUTE_RISE: '0.05'
+          COPY_MAX_RELATIVE_RISE: '0.20'
+          FORENSIC_SAMPLE_ENABLED: '1'
+          FORENSIC_WALLETS_PER_PASS: '3'
+          MARKET_DISCOVERY_INTERVAL: '3600'
+          MARKET_DISCOVERY_ADD_LIMIT: '20'
+          MARKET_DISCOVERY_MAX_CANDIDATES: '2500'
+          MIN_SELL_USD: '20'
+          MAX_ALERTS: '6'
+          MAX_PER_WALLET: '2'
+          GROUP_SECONDS: '60'
+          MAX_SIGNAL_AGE: '300'
+          VERIFY_MARKET: '1'
+          PAGES_PER_WALLET: '10'
+          PAPER_FRICTION_PCT: '0.01'
+          PAPER_SETTLEMENT_CHECKS: '12'
+          PAPER_MAX_RECORDS: '2000'
+        run: |
+          python3 tools/v32_telegram_entry.py
+
+      - name: Save v3.2 test-branch state ONLY (never main)
+        if: success()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add state/smart_tracker_v3.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: v3.2 experimental tracker state [skip ci]'
+            git pull --rebase origin tracker-v3.2-testing
+            git push origin HEAD:tracker-v3.2-testing
+          fi

@@ -19,6 +19,9 @@ from pathlib import Path
 
 import smart_tracker_v2 as v2
 import paper_tracker_v31 as paper
+import wallet_discovery_v32 as discovery
+import copy_quality_v32 as quality
+import wallet_forensics_v32 as forensics
 
 VERSION = 31
 STATE_FILE = 'state/smart_tracker_v3.json'
@@ -27,6 +30,10 @@ VERIFY_MARKET = os.getenv("VERIFY_MARKET", "1") == "1"
 GROUP_SECONDS = int(os.getenv('GROUP_SECONDS', '60'))
 MAX_SIGNAL_AGE = int(os.getenv('MAX_SIGNAL_AGE', '300'))
 MIN_BUY_USD = float(os.getenv('MIN_BUY_USD', '100'))
+MAX_BUY_PRICE = float(os.getenv('MAX_BUY_PRICE', '0.98'))  # Skip near-certain priced BUYs
+COPY_QUALITY_GATE = os.getenv('COPY_QUALITY_GATE', '0') == '1'  # Opt-in; never trading
+FORENSIC_SAMPLE_ENABLED = os.getenv('FORENSIC_SAMPLE_ENABLED', '0') == '1'
+MAX_SUPPRESSED_RECORDS = int(os.getenv('MAX_SUPPRESSED_RECORDS', '2500'))
 MIN_SELL_USD = float(os.getenv('MIN_SELL_USD', '20'))
 MAX_ALERTS = int(os.getenv('MAX_ALERTS', '6'))
 MAX_PER_WALLET = int(os.getenv('MAX_PER_WALLET', '2'))
@@ -207,6 +214,15 @@ def add_fill(state,t,now):
     pos['buy_qty' if side=='BUY' else 'sell_qty']+=shares
     pos['buy_usd' if side=='BUY' else 'sell_usd']+=usd
     pos['count']+=1
+    if side == 'BUY':
+        # Passive price profile: deduplicated fills since monitoring began.
+        # This is NOT the fraction of winning predictions nor lifetime history.
+        stats=state.get('wallets',{}).get(wallet)
+        if isinstance(stats,dict) and shares>0:
+            stats['observed_buy_fills']=stats.get('observed_buy_fills',0)+1
+            stats['observed_buy_usd']=round(stats.get('observed_buy_usd',0)+usd,4)
+            if num(t.get('price'))>=MAX_BUY_PRICE:
+                stats['observed_expensive_buy_fills']=stats.get('observed_expensive_buy_fills',0)+1
     return True
 
 
@@ -257,6 +273,8 @@ def format_alert(g,kind,holdings=None,meta=None,now=None):
            '🏷 '+html.escape(g['title']),
            '🕓 Latest trade: '+dt.datetime.fromtimestamp(g['last'],dt.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')+
            f' (~{max(0,(now-g["last"])//60)}m ago)']
+    if os.getenv('V32_TELEGRAM_ALERT_LABEL') == '1':
+        lines.insert(0, '🧪 <b>TRACKER 3.2 — experimental signal</b>')
     for token,p in sorted(g['outcomes'].items(),key=lambda x:-(x[1]['buy_usd']+x[1]['sell_usd'])):
         line=(f'🎯 {html.escape(p["label"])}: {p["count"]} fills; '
               f'BUY ${p["buy_usd"]:,.2f} / SELL ${p["sell_usd"]:,.2f}; '
@@ -279,11 +297,57 @@ def format_alert(g,kind,holdings=None,meta=None,now=None):
     if kind=='UNHELD':
         lines.append('⚠️ Snapshot does not show the purchased outcome. Possibly sold, redeemed, resolved, or below dust threshold. Do not assume they still hold it.')
     lines.append(f'📊 Profitable closed trading positions: {num(meta.get("winrate")):.0%}; NOT prediction accuracy')
+    factor=meta.get('profit_factor')
+    if factor is not None:
+        lines.append(f'📊 Closed-position profit factor: {factor:.2f} (not ROI)')
+    observed=meta.get('observed_buy_fills',0)
+    if observed>=10:
+        expensive=meta.get('observed_expensive_buy_fills',0)
+        lines.append(f'🔎 Observed expensive BUY fills: {expensive}/{observed} (partial monitored sample)')
+    if meta.get('mechanical_events_observed'):
+        lines.append('⚠️ Recent MERGE/SPLIT activity observed on this wallet; not proof this BUY was a prediction.')
     if g['url']:
         lines.append(f'<a href="{html.escape(g["url"],quote=True)}">Market</a> | '
                      f'<a href="https://polymarket.com/profile/{g["wallet"]}">Wallet</a>')
     lines.append('Research alert only; position can change after this snapshot.')
     return '\n'.join(lines)
+
+
+def remember_suppressed_buy(state,g,now,reason,quote=None):
+    """Record a skipped BUY for research, WITHOUT Telegram or a paper stake.
+
+    Preserve its wallet/market tracking so later public SELLs can still be
+    monitored. Bounded history lives in the existing state JSON (v31 schema).
+    """
+    ledger=state.setdefault('suppressed_v32',{'records':{},'counts':{}})
+    records=ledger.setdefault('records',{})
+    counts=ledger.setdefault('counts',{})
+    key=f"{g['wallet']}|{g['condition']}|{g['last']}|{reason}"
+    if key not in records:
+        if MAX_SUPPRESSED_RECORDS>0:
+            if len(records)>=MAX_SUPPRESSED_RECORDS:
+                oldest=min(records,key=lambda k:records[k].get('observed_at',0))
+                del records[oldest]
+            purchased=[(token,p) for token,p in g['outcomes'].items() if p['buy_qty']>0]
+            shares=sum(p['buy_qty'] for _,p in purchased)
+            value=sum(p['buy_usd'] for _,p in purchased)
+            records[key]={
+                'wallet':g['wallet'],'condition':g['condition'],
+                'source_ts':g['last'],'observed_at':now,
+                'title':g.get('title',''),'url':g.get('url',''),
+                'outcomes':[p.get('label','') for _,p in purchased],
+                'outcome_tokens':[token for token,_ in purchased],
+                'source_buy_usd':round(value,4),
+                'source_buy_shares':round(shares,4),
+                'source_avg_buy':round(value/shares,6) if shares else None,
+                'reason':reason,
+                'quote_best_ask':quote.get('best_ask') if quote else None,
+                'quote_avg':quote.get('avg_price') if quote else None,
+                'telegram_sent':False,
+                'paper_stake_created':False,
+            }
+            counts[reason]=counts.get(reason,0)+1
+    state.setdefault('tracking',{})[group_id(g['wallet'],g['condition'])]=now
 
 
 def candidate_groups(state,now):
@@ -296,6 +360,14 @@ def candidate_groups(state,now):
         if now-g['last']<GROUP_SECONDS:
             continue
         kind,buy,sell,_=summarize_group(g)
+        if kind=='BUY' and any(
+            p['buy_qty']>0 and p['buy_usd']/p['buy_qty']>=MAX_BUY_PRICE
+            for p in g['outcomes'].values()
+        ):
+            removed['high_buy_price']+=1
+            remember_suppressed_buy(state,g,now,'source_avg_buy_at_or_above_limit')
+            del state['pending'][gid]
+            continue
         if kind=='BUY' and buy<MIN_BUY_USD:
             removed['small_buy']+=1;del state['pending'][gid];continue
         if kind=='SELL' and (sell<MIN_SELL_USD or gid not in state['tracking']):
@@ -358,6 +430,29 @@ def dispatch(state,now):
             elif not any(holdings.get(t,0)>=0.01 for t in positive):
                 kind='UNHELD'
         paper_candidate,paper_note=paper.prepare(state,g,kind,holdings,now)
+        # Trader's fill is not today's available ask. Avoid a nearly $1 quote.
+        if kind=='BUY' and paper_candidate is not None and (
+            paper_candidate.get('best_ask',0)>=MAX_BUY_PRICE or
+            paper_candidate.get('avg_price',0)>=MAX_BUY_PRICE
+        ):
+            print('PRICE FILTER: market ask too high',condition[:20])
+            remember_suppressed_buy(state,g,now,'current_ask_at_or_above_limit',paper_candidate)
+            del state['pending'][gid]
+            market_skipped += 1
+            continue
+        # Opt-in: protect COPY BUYs, not informational SELL / MIXED updates.
+        # Failed quality checks remain in a bounded, paper-free research log.
+        if COPY_QUALITY_GATE and kind=='BUY':
+            ok, reason, quality_facts=quality.assess(
+                g,state.get('wallets',{}).get(wallet),holdings,paper_candidate)
+            if not ok:
+                print('COPY QUALITY: skipped BUY',condition[:20],reason)
+                remember_suppressed_buy(state,g,now,'quality_'+reason,paper_candidate)
+                del state['pending'][gid]
+                market_skipped+=1
+                continue
+            # This record is saved only AFTER successful Telegram delivery.
+            paper_candidate['quality_v32']=quality_facts
         message=format_alert(g,kind,holdings,state['wallets'].get(wallet),now)
         if paper_note:
             message+='\n'+html.escape(paper_note)
@@ -388,10 +483,13 @@ def main():
     args=parser.parse_args()
     now=int(time.time());state=read_state(args.state)
     v2.discover_candidates(state,now)
+    discovery.discover_market_wallets(state,now)
     if not state['wallets']:
         raise RuntimeError('No wallet candidates. API discovery failed.')
     checked,score_errors=v2.score_candidates(state,now)
     eligible=v2.qualified_wallets(state,now)[:MONITOR_MAX]
+    if FORENSIC_SAMPLE_ENABLED and eligible:
+        forensics.sample_eligible(state,eligible,now)
     if not eligible:
         print('WARNING: No qualified wallets yet. Scoring will continue.')
     discovered=sum(1 for w in state['wallets'].values() if w.get('checked_at'))
@@ -417,7 +515,7 @@ def main():
     print(paper.report(state,paper_updates))
     print(paper.wallet_digest(state))
     if args.notify_status:
-        v2.send_telegram('<b>Tracker 3.1 — diagnostics</b>\n'+html.escape(summary)+
+        v2.send_telegram('<b>Tracker 3.2 — diagnostics</b>\n'+html.escape(summary)+
                          '\n'+html.escape(paper.report(state,paper_updates))+'\n'+html.escape(paper.wallet_digest(state))+'\nTrading wins are NOT prediction wins.')
     if eligible and watch_errors==len(eligible):
         raise RuntimeError('All wallet trade requests failed. Check /v2/trades connectivity.')

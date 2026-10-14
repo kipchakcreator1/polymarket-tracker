@@ -1,0 +1,50 @@
+name: Tracker 3.2 Offline Tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Python source
+        run: |
+          python -m py_compile smart_tracker_v2.py smart_tracker_v3.py paper_tracker_v31.py wallet_discovery_v32.py copy_quality_v32.py wallet_forensics_v32.py tests/test_tracker_v32.py tests/test_copy_quality_v32.py tests/test_wallet_forensics_v32.py tools/check_market_discovery_api.py tools/check_wallet_forensics_api.py tools/dry_run_v32.py tools/shadow_qualified_v32.py tests/test_shadow_qualified_v32.py tools/sweep_market_wallets_v32.py tests/test_sweep_market_wallets_v32.py tools/v32_telegram_entry.py tests/test_v32_telegram_route.py
+      - name: Offline unit tests (no API keys, Telegram or real trades)
+        run: |
+          python -m unittest discover -s tests -v
+      - name: Public API live smoke (read-only; no credentials)
+        run: |
+          PYTHONPATH=. python tools/check_market_discovery_api.py
+      - name: Public activity MERGE/SPLIT/REDEEM smoke
+        run: |
+          PYTHONPATH=. python tools/check_wallet_forensics_api.py
+      - name: Read-only full pipeline preview (never sends Telegram)
+        run: |
+          PYTHONPATH=. python tools/dry_run_v32.py
+      - name: Sample recent qualified wallets without alerts or state changes
+        run: |
+          PYTHONPATH=. python tools/shadow_qualified_v32.py
+      - name: Discover many new public wallets (read-only; no promotion to live)
+        run: |
+          PYTHONPATH=. WIDE_MAX_MARKETS=300 WIDE_SCORE_SAMPLE=100 python tools/sweep_market_wallets_v32.py
+      - name: Save shadow research snapshot (not production state)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-observation-v32
+          path: |
+            artifacts/shadow-observation.json
+            artifacts/wide-wallet-sweep.json
+          if-no-files-found: ignore
+          retention-days: 30
