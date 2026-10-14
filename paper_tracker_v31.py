@@ -132,10 +132,13 @@ def prepare(state,g,kind,holdings,now):
     except Exception as exc:
         print('PAPER ENTRY WARNING',g['wallet'][:12],g['condition'][:12],type(exc).__name__,str(exc)[:120])
         return None,'📒 Paper: price unavailable — not recorded'
+    source_price=out['buy_usd']/out['buy_qty'] if out.get('buy_qty',0)>0 else None
     record={'wallet':g['wallet'],'condition':g['condition'],'token':token,
             'title':g['title'],'outcome':out['label'],'url':g.get('url',''),
             'alert_ts':now,'last_source_fill_ts':int(g['last']),
             'stake':STAKE,'shares':quote['shares'],'avg_price':quote['price'],
+            'source_avg_buy_price':round(source_price,6) if source_price is not None else None,
+            'source_to_paper_price_change':round(quote['price']-source_price,6) if source_price is not None else None,
             'best_ask':quote['best_ask'],'min_order_shares':quote['min_order_shares'],
             'feasible_1usd':quote['one_dollar_meets_min'],
             'status':'OPEN','last_checked':0}
