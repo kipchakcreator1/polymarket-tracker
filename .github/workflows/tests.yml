@@ -37,7 +37,7 @@ jobs:
           PYTHONPATH=. python tools/shadow_qualified_v32.py
       - name: Discover many new public wallets (read-only; no promotion to live)
         run: |
-          PYTHONPATH=. WIDE_MAX_MARKETS=180 WIDE_SCORE_SAMPLE=60 python tools/sweep_market_wallets_v32.py
+          PYTHONPATH=. WIDE_MAX_MARKETS=300 WIDE_SCORE_SAMPLE=100 python tools/sweep_market_wallets_v32.py
       - name: Save shadow research snapshot (not production state)
         if: always()
         uses: actions/upload-artifact@v4
