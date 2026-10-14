@@ -76,14 +76,14 @@ class TwelveHourTelegramTests(unittest.TestCase):
         }
         far = dict(near, ticker="TEST-FAR", hours_to_close=2)
         lst = notify.due_messages(self.portfolio, {"sent": []}, ex.START,
-                                  {"quotes": [far, near]})
+                                  {"bucket": 0, "quotes": [far, near]})
         quotes = [(k, v) for k, v in lst if k.startswith("quote|")]
         self.assertEqual(len(quotes), 2)
         self.assertIn("НЕ ПОКУПКА", quotes[0][1])
         lst2 = notify.due_messages(self.portfolio,
                                    {"sent": ["initial"] + [k for k, _ in quotes]},
                                    ex.START + timedelta(minutes=1),
-                                   {"quotes": [near]})
+                                   {"bucket": 0, "quotes": [near]})
         self.assertFalse(any(x.startswith("quote|") for x, _ in lst2))
 
     def test_scan_heartbeat_from_real_snapshot_once_per_bucket(self):
