@@ -7,6 +7,8 @@ on:
     paths:
       - 'kalshi99/experiment12h.py'
       - 'kalshi99/test_experiment12h.py'
+      - 'kalshi99/experiment12h_telegram.py'
+      - 'kalshi99/test_experiment12h_telegram.py'
       - '.github/workflows/kalshi-12h-validate.yml'
   workflow_dispatch:
 
@@ -26,5 +28,5 @@ jobs:
           python-version: '3.11'
       - name: No-network test suite
         run: |
-          python -m py_compile kalshi99/experiment12h.py kalshi99/test_experiment12h.py
-          python -m unittest kalshi99.test_scanner kalshi99.test_experiment12h -v
+          python -m py_compile kalshi99/experiment12h.py kalshi99/test_experiment12h.py kalshi99/experiment12h_telegram.py kalshi99/test_experiment12h_telegram.py
+          python -m unittest kalshi99.test_scanner kalshi99.test_experiment12h kalshi99.test_experiment12h_telegram -v
