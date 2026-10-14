@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 86,
-  "maker_proposals": 3834,
+  "last_bucket": 87,
+  "maker_proposals": 3894,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 67,
+  "scans": 68,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 63810,
-  "total_listed_markets": 400240,
-  "total_verified_quotes": 3834,
+  "total_indicative_candidates": 64752,
+  "total_listed_markets": 406240,
+  "total_verified_quotes": 3894,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
@@ -63,6 +63,7 @@
     "KX10YRDIRHW-26OCT16H-T5.33:yes",
     "KX10YRDIRHW-26OCT16H-T5.34:yes",
     "KX10YRDIRHW-26OCT16H-T5.35:yes",
+    "KX10YRDIRHW-26OCT16H-T5.36:yes",
     "KX10YRDIRHW-26OCT16H-T5.37:yes",
     "KX10YRDIRHW-26OCT16H-T5.38:yes",
     "KX10YRDIRHW-26OCT16H-T5.39:yes",
@@ -1102,7 +1103,9 @@
     "KXUSLSPREAD-26OCT14RHOLOU-LOU3:no",
     "KXUST10A-26OCT16-T5.07:yes",
     "KXUST2A-26OCT16-T4.62:yes",
+    "KXUST2A-26OCT16-T4.74:yes",
     "KXUST5A-26OCT16-T4.85:yes",
+    "KXUST5A-26OCT16-T4.95:yes",
     "KXUST7A-26OCT16-T4.95:yes",
     "KXVALORANTTOTALMAPS-26OCT141700MIBRFFLYR-3:yes",
     "KXVIDEOAI-26OCT16-GOOG:no",
