@@ -10,6 +10,9 @@ import math
 import os
 
 MIN_PROFIT_FACTOR = float(os.getenv('COPY_MIN_PROFIT_FACTOR', '1.15'))
+MIN_CLOSED = int(os.getenv('MIN_CLOSED', '30'))
+MIN_WINRATE = float(os.getenv('MIN_WINRATE', '0.70'))
+MIN_REALIZED_PNL = float(os.getenv('MIN_REALIZED_PNL', '100'))
 MAX_COPY_ABSOLUTE_RISE = float(os.getenv('COPY_MAX_ABSOLUTE_RISE', '0.05'))
 MAX_COPY_RELATIVE_RISE = float(os.getenv('COPY_MAX_RELATIVE_RISE', '0.20'))
 MAX_QUOTE_PRICE = float(os.getenv('MAX_BUY_PRICE', '0.98'))
@@ -52,6 +55,10 @@ def assess(group, wallet_stats, holdings, quote):
     token, source_price = outcome
     facts = {'source_price': round(source_price, 6)}
     stats = wallet_stats or {}
+    if (stats.get('n', 0) < MIN_CLOSED or
+            stats.get('winrate', 0) < MIN_WINRATE or
+            stats.get('recent_realized_pnl', float('-inf')) < MIN_REALIZED_PNL):
+        return False, 'wallet_history_below_threshold', facts
     factor = positive_number(stats.get('profit_factor'))
     facts['profit_factor'] = factor
     if factor is None:
