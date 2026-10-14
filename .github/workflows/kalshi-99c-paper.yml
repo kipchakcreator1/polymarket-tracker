@@ -40,7 +40,7 @@ jobs:
 
       - name: Scan public market data and run only $4 paper experiment
         run: |
-          python -m kalshi99.scanner --paper-trade --pages 6 --page-size 500 --books 25
+          python -m kalshi99.scanner --paper-trade --pages 12 --page-size 500 --books 25 --horizon 168
 
       - name: Archive paper research report
         if: always()
