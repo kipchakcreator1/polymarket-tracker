@@ -72,9 +72,42 @@ def settled_message(strategy, p):
     )
 
 
+def scan_message(state, snapshot):
+    quotes = snapshot.get("quotes", [])
+    quick12 = sum(float(q["hours_to_close"]) <= 12 for q in quotes)
+    quick1 = sum(float(q["hours_to_close"]) <= 1 for q in quotes)
+    lines = [
+        "📡 KALSHI 12H — ПРОВЕРКА РЫНКА (НЕ СТАВКА)",
+        "🕒 Снимок: " + snapshot["sampled_at_utc"][:16].replace("T", " ") + " UTC",
+        "🔍 Рынков: " + str(snapshot["active_market_rows"]) +
+        " | по цене 98–99¢: " + str(snapshot["indicative_candidates"]),
+        "📚 Стаканов проверено: " + str(snapshot["orderbooks_requested"]) +
+        " | подтвердились: " + str(snapshot["verified_quotes"]),
+        "⏱ Закрытие до 1ч: " + str(quick1) +
+        " | до 12ч: " + str(quick12),
+    ]
+    closest = sorted(quotes, key=lambda q: (float(q["hours_to_close"]), q["ticker"]))[:2]
+    if closest:
+        lines.append("Ближайшие проверенные котировки (наблюдения):")
+        for q in closest:
+            lines.append(
+                "• " + q["title"][:75] + " | " + q["side"].upper() +
+                " " + str(q["sampled_ask"]) +
+                " | закрытие через " + str(q["hours_to_close"]) + "ч"
+            )
+    else:
+        lines.append("Нет подтверждённых цен для этих 60 проверок.")
+    lines.append(
+        "💰 Виртуальных сделок: " +
+        str(sum(len(p["positions"]) + len(p["history"]) for p in state["portfolios"].values())) +
+        " | никаких реальных ставок. Цена ≠ независимая вероятность."
+    )
+    return "\n".join(lines)
+
+
 def quote_message(q):
     return (
-        "🔎 KALSHI 12H — ИНТЕРЕСНАЯ КОТИРОВКА, НЕ ПОКУПКА\n"
+        "🔎 KALSHI 12H — НАБЛЮДЕНИЕ, НЕ ПОКУПКА\n"
         "🎯 " + q["title"] +
         "\n📋 " + q["ticker"] + " · " + q["side"].upper() +
         "\n💵 Ask " + str(q["sampled_ask"]) +
@@ -109,18 +142,34 @@ def due_messages(state, ack, now, latest=None):
             if buy not in seen:
                 events.append((buy, buy_message(name, pos)))
     if latest and ex.START <= now < ex.END:
+        # At most one scanner heartbeat per actual completed five-minute bucket.
+        # Never pretend missed GitHub cron ticks were real scans.
+        scan_id = "scan|" + str(latest["bucket"])
+        if scan_id not in seen:
+            events.append((scan_id, scan_message(state, latest)))
         remaining = MAX_QUOTE_ALERTS - sum(k.startswith("quote|") for k in seen)
+        # Quote notes are observations, NOT buy signals or executions.
+        # Prefer short closing horizons; permit just six long-dated examples.
         if remaining > 0:
-            count = 0
-            for q in latest.get("quotes", []):
-                if float(q.get("hours_to_close", 999)) > 1:
+            long_seen = sum(k.startswith("quote|far|") for k in seen)
+            extra_far = 0
+            offered = 0
+            ordered = sorted(
+                latest.get("quotes", []),
+                key=lambda q: (float(q["hours_to_close"]), q["ticker"], q["side"]))
+            for q in ordered:
+                far = float(q.get("hours_to_close", 999)) > 12
+                if far and long_seen + extra_far >= 6:
                     continue
-                key = "quote|" + q["ticker"] + "|" + q["side"]
-                if key not in seen:
-                    events.append((key, quote_message(q)))
-                    count += 1
-                    if count >= min(2, remaining):
-                        break
+                key = "quote|" + ("far|" if far else "near|") + q["ticker"] + "|" + q["side"]
+                if key in seen:
+                    continue
+                events.append((key, quote_message(q)))
+                offered += 1
+                if far:
+                    extra_far += 1
+                if offered >= min(2, remaining):
+                    break
     if ex.START <= now < ex.END:
         hour_key = "hour|" + now.strftime("%Y%m%d%H")
         if hour_key not in seen and "initial" in seen:
