@@ -1,0 +1,30 @@
+name: Kalshi 12h Research Offline Validation
+
+# On research branch only. Public API / paper scanner not run on this CI job.
+on:
+  push:
+    branches: [kalshi-12h-research]
+    paths:
+      - 'kalshi99/experiment12h.py'
+      - 'kalshi99/test_experiment12h.py'
+      - '.github/workflows/kalshi-12h-validate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: kalshi-12h-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: No-network test suite
+        run: |
+          python -m py_compile kalshi99/experiment12h.py kalshi99/test_experiment12h.py
+          python -m unittest kalshi99.test_scanner kalshi99.test_experiment12h -v
