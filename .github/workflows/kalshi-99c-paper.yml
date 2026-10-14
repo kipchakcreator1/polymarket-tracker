@@ -38,6 +38,9 @@ jobs:
           python -m py_compile kalshi99/scanner.py kalshi99/test_scanner.py
           python -m unittest kalshi99.test_scanner -v
 
+      - name: Diagnose public Kalshi market query selection (no orders)
+        run: python -m kalshi99.diagnose
+
       - name: Scan public market data and run only $4 paper experiment
         run: |
           python -m kalshi99.scanner --paper-trade --pages 12 --page-size 500 --books 25 --horizon 168
