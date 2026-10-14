@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 75,
-  "maker_proposals": 3180,
+  "last_bucket": 76,
+  "maker_proposals": 3238,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 56,
+  "scans": 57,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 53213,
-  "total_listed_markets": 334283,
-  "total_verified_quotes": 3180,
+  "total_indicative_candidates": 54201,
+  "total_listed_markets": 340283,
+  "total_verified_quotes": 3238,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
@@ -280,6 +280,10 @@
     "KXDOTA2MAP-26OCT150400IAPXE-1-IAP:no",
     "KXDOTA2MAP-26OCT150400IAPXE-1-XE:no",
     "KXDOTA2MAP-26OCT150400IAPXE-2-IAP:no",
+    "KXDOTA2MAP-26OCT150400IAPXE-2-XE:no",
+    "KXDOTA2MAP-26OCT150400IVOYG-1-IVO:no",
+    "KXDOTA2MAP-26OCT150400IVOYG-2-IVO:no",
+    "KXDOTA2MAP-26OCT150400IVOYG-2-YG:no",
     "KXDOTA2TOTALMAPS-26OCT140400CLORG-3:no",
     "KXDOTA2TOTALMAPS-26OCT140400CLORG-3:yes",
     "KXDOTA2TOTALMAPS-26OCT140400ZENCLO-3:no",
@@ -288,6 +292,8 @@
     "KXDOTA2TOTALMAPS-26OCT150000KINDB-3:yes",
     "KXDOTA2TOTALMAPS-26OCT150000RBXCTN-3:yes",
     "KXDOTA2TOTALMAPS-26OCT150300SALSPIRITAC-3:yes",
+    "KXDOTA2TOTALMAPS-26OCT150400IAPXE-3:no",
+    "KXDOTA2TOTALMAPS-26OCT150400IAPXE-3:yes",
     "KXDOTA2TOTALMAPS-26OCT150400IVOYG-3:yes",
     "KXEFLCHAMPIONSHIP1HSPREAD-26OCT14QPRDER-DER2:no",
     "KXEFLCHAMPIONSHIPSPREAD-26OCT14LICWHU-LIC3:no",
