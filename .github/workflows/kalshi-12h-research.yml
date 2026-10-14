@@ -37,8 +37,8 @@ jobs:
 
       - name: Offline tests, no credentials
         run: |
-          python -m py_compile kalshi99/experiment12h.py kalshi99/test_experiment12h.py
-          python -m unittest kalshi99.test_scanner kalshi99.test_experiment12h -v
+          python -m py_compile kalshi99/experiment12h.py kalshi99/test_experiment12h.py kalshi99/experiment12h_telegram.py kalshi99/test_experiment12h_telegram.py
+          python -m unittest kalshi99.test_scanner kalshi99.test_experiment12h kalshi99.test_experiment12h_telegram -v
 
       - name: Prospectively sample public Kalshi asks (PAPER ONLY, 12h cutoff)
         run: |
@@ -61,6 +61,26 @@ jobs:
           git add -A research/
           if ! git diff --cached --quiet; then
             git commit -m 'chore: 12h public-only market observation [skip ci]'
+            git pull --rebase origin kalshi-12h-research
+            git push origin HEAD:kalshi-12h-research
+          fi
+      - name: Send 12h Kalshi PAPER signals and summaries via Tracker 3.2 bot
+        if: success()
+        env:
+          TELEGRAM_V31_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_V32_BOT_TOKEN: ${{ secrets.TELEGRAM_V32_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -m kalshi99.experiment12h_telegram
+
+      - name: Save Telegram dedup checkpoint to 12h research branch ONLY
+        if: success()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A research/kalshi-12h-telegram.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: 12h Telegram acknowledgment [skip ci]'
             git pull --rebase origin kalshi-12h-research
             git push origin HEAD:kalshi-12h-research
           fi
