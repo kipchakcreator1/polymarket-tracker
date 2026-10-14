@@ -20,7 +20,7 @@ import copy_quality_v32 as quality
 
 OUTPUT=Path(os.getenv('SHADOW_REPORT_PATH','artifacts/shadow-observation.json'))
 STATE=Path('state/smart_tracker_v3.json')
-MAX_WALLETS=min(200,max(1,int(os.getenv('SHADOW_WALLET_SAMPLE','160'))))
+MAX_WALLETS=min(500,max(1,int(os.getenv('SHADOW_WALLET_SAMPLE','450'))))
 LOOKBACK_MINUTES=min(90,max(15,int(os.getenv('SHADOW_LOOKBACK_MINUTES','70'))))
 MAX_QUOTE_PROBES=12
 
