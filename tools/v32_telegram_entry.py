@@ -10,6 +10,7 @@ Never print tokens or destination IDs.
 import os
 import re
 import sys
+from pathlib import Path
 
 TELEGRAM_CHAT_ID_RE = re.compile(r"^-?[0-9]{4,20}$|^@[a-zA-Z][a-zA-Z0-9_]{4,31}$")
 
@@ -36,6 +37,12 @@ def run():
     os.environ["TELEGRAM_CHAT_ID"] = chat_id
     os.environ["V32_TELEGRAM_ALERT_LABEL"] = "1"
     print("V3.2 TELEGRAM: separate bot validated; no real orders")
+    # GitHub launches this ENTRY FILE from tools/, so Python puts tools/ rather
+    # than the repository root on sys.path. Preserve fail-closed token routing
+    # before exposing the existing read-only tracker package to imports.
+    repository_root = str(Path(__file__).resolve().parent.parent)
+    if repository_root not in sys.path:
+        sys.path.insert(0, repository_root)
     import smart_tracker_v3
     smart_tracker_v3.main()
 
