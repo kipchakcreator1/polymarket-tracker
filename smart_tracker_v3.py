@@ -19,6 +19,7 @@ from pathlib import Path
 
 import smart_tracker_v2 as v2
 import paper_tracker_v31 as paper
+import wallet_discovery_v32 as discovery
 
 VERSION = 31
 STATE_FILE = 'state/smart_tracker_v3.json'
@@ -27,6 +28,7 @@ VERIFY_MARKET = os.getenv("VERIFY_MARKET", "1") == "1"
 GROUP_SECONDS = int(os.getenv('GROUP_SECONDS', '60'))
 MAX_SIGNAL_AGE = int(os.getenv('MAX_SIGNAL_AGE', '300'))
 MIN_BUY_USD = float(os.getenv('MIN_BUY_USD', '100'))
+MAX_BUY_PRICE = float(os.getenv('MAX_BUY_PRICE', '0.98'))  # Skip near-certain priced BUYs
 MIN_SELL_USD = float(os.getenv('MIN_SELL_USD', '20'))
 MAX_ALERTS = int(os.getenv('MAX_ALERTS', '6'))
 MAX_PER_WALLET = int(os.getenv('MAX_PER_WALLET', '2'))
@@ -296,6 +298,13 @@ def candidate_groups(state,now):
         if now-g['last']<GROUP_SECONDS:
             continue
         kind,buy,sell,_=summarize_group(g)
+        if kind=='BUY' and any(
+            p['buy_qty']>0 and p['buy_usd']/p['buy_qty']>=MAX_BUY_PRICE
+            for p in g['outcomes'].values()
+        ):
+            removed['high_buy_price']+=1
+            del state['pending'][gid]
+            continue
         if kind=='BUY' and buy<MIN_BUY_USD:
             removed['small_buy']+=1;del state['pending'][gid];continue
         if kind=='SELL' and (sell<MIN_SELL_USD or gid not in state['tracking']):
@@ -358,6 +367,15 @@ def dispatch(state,now):
             elif not any(holdings.get(t,0)>=0.01 for t in positive):
                 kind='UNHELD'
         paper_candidate,paper_note=paper.prepare(state,g,kind,holdings,now)
+        # Trader's fill is not today's available ask. Avoid a nearly $1 quote.
+        if kind=='BUY' and paper_candidate is not None and (
+            paper_candidate.get('best_ask',0)>=MAX_BUY_PRICE or
+            paper_candidate.get('avg_price',0)>=MAX_BUY_PRICE
+        ):
+            print('PRICE FILTER: market ask too high',condition[:20])
+            del state['pending'][gid]
+            market_skipped += 1
+            continue
         message=format_alert(g,kind,holdings,state['wallets'].get(wallet),now)
         if paper_note:
             message+='\n'+html.escape(paper_note)
@@ -388,6 +406,7 @@ def main():
     args=parser.parse_args()
     now=int(time.time());state=read_state(args.state)
     v2.discover_candidates(state,now)
+    discovery.discover_market_wallets(state,now)
     if not state['wallets']:
         raise RuntimeError('No wallet candidates. API discovery failed.')
     checked,score_errors=v2.score_candidates(state,now)
@@ -417,7 +436,7 @@ def main():
     print(paper.report(state,paper_updates))
     print(paper.wallet_digest(state))
     if args.notify_status:
-        v2.send_telegram('<b>Tracker 3.1 — diagnostics</b>\n'+html.escape(summary)+
+        v2.send_telegram('<b>Tracker 3.2 — diagnostics</b>\n'+html.escape(summary)+
                          '\n'+html.escape(paper.report(state,paper_updates))+'\n'+html.escape(paper.wallet_digest(state))+'\nTrading wins are NOT prediction wins.')
     if eligible and watch_errors==len(eligible):
         raise RuntimeError('All wallet trade requests failed. Check /v2/trades connectivity.')
