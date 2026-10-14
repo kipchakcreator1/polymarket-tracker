@@ -34,7 +34,7 @@ def status_message(state, now, title):
         "📈 Проверенных ask: " + str(state["total_verified_quotes"])
         + " (уникальных " + str(len(state["unique_verified_market_sides"])) + ")",
     ]
-    for key, tag in (("taker_12h", "До 12ч"), ("taker_near_1h", "До 1ч")):
+    for key, tag in (("taker_12h", "Любые 98–99¢ (в каталоге 72ч)"), ("taker_near_1h", "До 1ч")):
         p = ex.portfolio_stats(state["portfolios"][key])
         parts.append(
             "💼 " + tag + ": свободно $" + p["cash_usd"] +
