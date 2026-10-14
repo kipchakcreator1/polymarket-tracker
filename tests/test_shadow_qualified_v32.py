@@ -13,6 +13,15 @@ class ShadowPreviewTests(unittest.TestCase):
         self.assertEqual(len(sampled),12)
         self.assertEqual(len(set(x[0] for x in sampled)),12)
 
+    def test_rotating_sample_expands_coverage_over_multiple_hours(self):
+        wallets=[(str(i),{}) for i in range(398)]
+        sample0=shadow.sample_rotating(wallets,160,0)
+        sample1=shadow.sample_rotating(wallets,160,1)
+        sample2=shadow.sample_rotating(wallets,160,2)
+        self.assertEqual(len(set(x[0] for x in sample0)),160)
+        self.assertEqual(len(set(x[0] for x in sample1)),160)
+        self.assertEqual(len(set(x[0] for x in sample0+sample1+sample2)),398)
+
     def test_wallet_trade_mismatch_rejected(self):
         body={'data':[{'proxy_wallet':'0x'+'b'*40,'side':'BUY'}],
               'pagination':{'has_more':False}}
