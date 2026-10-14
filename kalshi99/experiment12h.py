@@ -2,7 +2,8 @@
 """12-hour Kalshi 98-99¢ PROSPECTIVE PAPER study.
 
 Public market GET requests only. Never imports or executes an authenticated
-trading client. Two INDEPENDENT simulated $4 portfolios; the observations and
+trading client. Two INDEPENDENT simulated $4 portfolios; first accepts existing 98-99c
+quotes regardless of whether settlement is inside this 12-hour study. Observations and
 maker intents are NOT fills. This is not a validated trading strategy.
 """
 from __future__ import annotations
@@ -92,6 +93,7 @@ def make_report(state: dict, now: datetime, status: str, scan: dict | None = Non
             "Hypothetical maker limits never count as fills; maker comparison only tracks indicative price advantage.",
             "No independently estimated true winning probabilities.",
             "Two simulated $4 portfolios are mutually independent comparisons; each has only ONE open position.",
+            "The taker_12h portfolio key is kept for history compatibility, but NO longer filters trades to 12h; it admits ANY sampled 98-99c quote within the 72h market-discovery horizon.",
             "Any still-open contracts at 12-hour cutoff are excluded from realized P/L.",
             "Only a subset of Kalshi markets/orderbooks is visited each run; GitHub cron may be delayed.",
             "Fees are a conservative 1-cent rounded generic taker estimate, not a verified series fee.",
@@ -141,11 +143,15 @@ def scan(now: datetime, state: dict) -> dict:
     state["maker_proposals"] += len(quotes)
 
     new_entries = {}
-    for strategy, maximum_hours in (("taker_12h", 12), ("taker_near_1h", 1)):
+    for strategy, maximum_hours in (("taker_12h", None), ("taker_near_1h", 1)):
         portfolio = state["portfolios"][strategy]
-        # Use only immediately sampled ask and depth, NOT mid or last trade.
+        # 'taker_12h' is a legacy state key, NOT a hold-to-12h rule.
+        # Accept EXISTING 98-99c quotes NOW, even if their official
+        # close_time is days later. Keep the short-horizon portfolio separate.
+        # Use only sampled ask/depth, NOT mid or last trade.
         feasible = sorted(
-            (q for q in quotes if q["hours_to_close"] <= maximum_hours),
+            (q for q in quotes if maximum_hours is None
+             or q["hours_to_close"] <= maximum_hours),
             key=lambda q: (q["hours_to_close"], D(q["quote"]), q["ticker"]))
         new_entries[strategy] = None
         for quote in feasible:
