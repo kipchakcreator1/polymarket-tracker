@@ -9,7 +9,7 @@ on:
     paths:
       - '.github/workflows/kalshi-12h-research.yml'
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '2-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
