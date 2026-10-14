@@ -5,7 +5,7 @@ name: Kalshi 99c $4 Paper Research
 # GitHub cron may be delayed, so times are approximate.
 on:
   schedule:
-    - cron: '8,23,38,53 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
