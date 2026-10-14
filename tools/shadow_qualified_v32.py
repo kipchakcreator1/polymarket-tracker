@@ -20,7 +20,8 @@ import copy_quality_v32 as quality
 
 OUTPUT=Path(os.getenv('SHADOW_REPORT_PATH','artifacts/shadow-observation.json'))
 STATE=Path('state/smart_tracker_v3.json')
-MAX_WALLETS=min(40,max(1,int(os.getenv('SHADOW_WALLET_SAMPLE','24'))))
+MAX_WALLETS=min(200,max(1,int(os.getenv('SHADOW_WALLET_SAMPLE','160'))))
+LOOKBACK_MINUTES=min(90,max(15,int(os.getenv('SHADOW_LOOKBACK_MINUTES','70'))))
 MAX_QUOTE_PROBES=12
 
 
@@ -32,6 +33,14 @@ def sample_ranked(eligible, n):
             for i in range(n)]
 
 
+def sample_rotating(eligible, n, epoch_hour):
+    """Deterministic rotation across *all* eligible wallets, not just top N."""
+    if len(eligible)<=n:
+        return eligible
+    start=(epoch_hour*n) % len(eligible)
+    return [eligible[(start+i)%len(eligible)] for i in range(n)]
+
+
 def fetch_recent(wallet, start, end):
     """Bounded cursor walk, checked for complete results and wallet ownership."""
     cursor=None
@@ -41,7 +50,7 @@ def fetch_recent(wallet, start, end):
               'limit':200,'taker_only':'false'}
         if cursor:
             args['cursor']=cursor
-        body=v2.request_json('/v2/trades',args,tries=2,timeout=12)
+        body=v2.request_json('/v2/trades',args,tries=1,timeout=8)
         if not isinstance(body,dict) or not isinstance(body.get('data'),list):
             raise ValueError('Unexpected wallet trade response')
         pg=body.get('pagination')
@@ -74,17 +83,22 @@ def read_existing_state():
 def main():
     now=int(time.time())
     source=read_existing_state()
+    # v2 caps monitored wallets to 250 by default; the standalone shadow
+    # sampler may read all wallets passing the same thresholds, without altering
+    # any committed state or the live monitor limit.
+    v2.MAX_TRACKED=5000
     eligible=v2.qualified_wallets(source,now)
-    sampled=sample_ranked(eligible,MAX_WALLETS)
+    sampled=sample_rotating(eligible,MAX_WALLETS,now//3600)
     counters=collections.Counter()
     reasons=collections.Counter()
     observations=[]
     shadow=tracker.fresh_state()  # in-memory, never persisted
     shadow['wallets']={addr:dict(meta) for addr,meta in sampled}
     freshness_seconds=5*60
-    start=now-15*60
+    start=now-LOOKBACK_MINUTES*60
     print(f'SHADOW: qualified_from_snapshot={len(eligible)} sampled={len(sampled)} '
-          f'window_minutes=15 actionable_fresh_minutes=5')
+          f'lookback_minutes={LOOKBACK_MINUTES} actionable_fresh_minutes=5; '
+          'rotating sample, not full-wallet monitoring')
     if not sampled:
         report={'status':'inconclusive_no_fresh_qualified_snapshot',
                 'observed_at':now,'qualified':0,'sampled':0,
@@ -93,7 +107,7 @@ def main():
         OUTPUT.write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
         print('SHADOW RESULT: INCONCLUSIVE no eligible snapshot wallets')
         return
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         futures={pool.submit(fetch_recent,addr,start,now):addr for addr,_ in sampled}
         for future in concurrent.futures.as_completed(futures):
             addr=futures[future]
@@ -104,13 +118,13 @@ def main():
                 print('SHADOW trade error:',addr[:12],type(exc).__name__,str(exc)[:90])
                 continue
             counters['wallets_polled']+=1
-            counters['trade_rows_15m']+=len(rows)
+            counters['trade_rows_in_lookback']+=len(rows)
             for t in rows:
                 stamp=int(v2.asfloat(t.get('timestamp'),0))
                 if stamp>now+60 or stamp<start:
                     continue
                 if stamp<now-freshness_seconds:
-                    counters['old_trades_excluded']+=1
+                    counters['older_trades_observed_but_not_quoted']+=1
                     continue
                 if tracker.add_fill(shadow,t,now):
                     counters['new_fresh_trade_rows']+=1
@@ -172,14 +186,17 @@ def main():
         'observed_at':now,
         'source_snapshot':'test_branch_state_copy_read_only',
         'qualified_from_snapshot':len(eligible),
-        'sampled_rank_stratified':len(sampled),
+        'sampled_rotating':len(sampled),
+        'lookback_minutes':LOOKBACK_MINUTES,
+        'rotation_epoch_hour':now//3600,
         'counts':dict(counters),
         'reasons':dict(reasons),
         'observations':observations,
         'limitations':[
             'No trades, Telegram, virtual portfolio commits, or production state writes',
             'Single observation: no measured future outcome, profit or signal quality',
-            'Snapshot wallet scores may be stale; sample is rank-stratified, not representative',
+            'Snapshot wallet scores may be stale; the rotating sample is not representative',
+            'Older trades in the lookback are counted but NEVER priced at the present ask',
             'A passing basic gate does not imply a fair-value edge or actual executability',
             'Only complete, recent, API-visible trades count; incomplete pages are errors',
             'Paper $1 depth is hypothetical; it can fail exchange order minimums',
