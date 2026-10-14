@@ -116,6 +116,7 @@ def list_open_markets(pages: int, page_size: int = 500,
             "limit": page_size,
             "min_close_ts": int(now.timestamp()) + 600,
             "max_close_ts": int(now.timestamp()) + horizon_hours * 3600,
+            "mve_filter": "exclude",
         }
         if cursor:
             params["cursor"] = cursor
@@ -124,7 +125,7 @@ def list_open_markets(pages: int, page_size: int = 500,
         if not isinstance(batch, list):
             raise ValueError("Unexpected public market response")
         fetched += 1
-        found.extend(m for m in batch if m.get("status") == "open")
+        found.extend(m for m in batch if m.get("status") == "active")
         new_cursor = data.get("cursor") or ""
         if not batch or not new_cursor or new_cursor == cursor:
             break
@@ -133,7 +134,7 @@ def list_open_markets(pages: int, page_size: int = 500,
 
 
 def candidate_sides(market: dict, now: datetime, max_horizon_hours: int = 72) -> list[dict]:
-    if market.get("status") != "open" or market.get("market_type", "binary") != "binary":
+    if market.get("status") != "active" or market.get("market_type", "binary") != "binary":
         return []
     if market.get("mve_collection_ticker"):
         return []  # exclude potentially nonstandard combo payouts
@@ -251,7 +252,7 @@ def settle_positions(state: dict) -> tuple[int, int]:
             active.append(pos)
             errors += 1
             continue
-        if market.get("status") != "settled" or market.get("result") not in ("yes", "no"):
+        if market.get("status") != "finalized" or market.get("result") not in ("yes", "no"):
             active.append(pos)  # no premature win/void guessing
             continue
         win = market["result"] == pos["side"]
@@ -314,7 +315,7 @@ def run(args) -> dict:
         "strategy": "98-99c PRICE-ONLY BASELINE; probability not independently estimated",
         "real_trading_enabled": False,
         "pages_read": pages, "markets_scanned": len(markets),
-        "discovery_mode": "min_close_ts/max_close_ts window; local status=open filter",
+        "discovery_mode": "min_close_ts/max_close_ts window, mve_filter=exclude; local status=active filter",
         "indicative_candidates": len(shortlist), "orderbooks_checked": min(len(shortlist), args.books),
         "orderbook_errors": book_errors, "settlement_errors": settlement_errors,
         "paper_trading_enabled": args.paper_trade,
