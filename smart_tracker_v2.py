@@ -200,13 +200,46 @@ def closed_stats(wallet):
             "net_per_closed": round(sum(pnl) / n, 4) if n else None}
 
 
+def missing_copy_metrics(meta):
+    """Only refresh promising cached wallets with legacy missing profit-factor fields.
+
+    A present value of None means 'no observed losses / PF unknown', not
+    missing historical data; do not refresh that wallet indefinitely.
+    """
+    return (
+        "profit_factor" not in meta
+        and meta.get("checked_at", 0) > 0
+        and meta.get("n", 0) >= MIN_CLOSED
+        and meta.get("winrate", 0) >= MIN_WINRATE
+        and meta.get("recent_realized_pnl", float("-inf")) >= MIN_REALIZED_PNL
+    )
+
+
+def wallets_due_for_scoring(wallets, now, limit=None):
+    """Prioritize qualified legacy-wallet migration, then regular stale scores.
+
+    This prevents v3.2 copy gate from silently rejecting everyone solely
+    because v3.1 did not persist profit_factor. Never fabricate metrics.
+    """
+    limit = SCORE_BATCH if limit is None else limit
+    due = (
+        addr for addr, meta in wallets.items()
+        if missing_copy_metrics(meta)
+        or now - meta.get("checked_at", 0) >= REFRESH_SCORES_SECONDS
+    )
+    return sorted(
+        due,
+        key=lambda w: (
+            0 if missing_copy_metrics(wallets[w]) else 1,
+            wallets[w].get("checked_at", 0),
+            -wallets[w].get("lb_pnl", 0),
+        ),
+    )[:limit]
+
+
 def score_candidates(state, now):
     wallets = state["wallets"]
-    pending = sorted(
-        (addr for addr, meta in wallets.items() if
-         now - meta.get("checked_at", 0) >= REFRESH_SCORES_SECONDS),
-        key=lambda w: (wallets[w].get("checked_at", 0), -wallets[w].get("lb_pnl", 0)),
-    )[:SCORE_BATCH]
+    pending = wallets_due_for_scoring(wallets, now)
     if not pending:
         print("SCORING: all current candidates already scored")
         return 0, 0
