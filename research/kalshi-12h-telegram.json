@@ -2,6 +2,9 @@
   "schema": 1,
   "sent": [
     "initial",
-    "hour|2026101407"
+    "hour|2026101407",
+    "scan|10",
+    "quote|far|KXDIMAYORSPREAD-26OCT13MILOC-MIL3|no",
+    "quote|far|KXDIMAYORSPREAD-26OCT13MILOC-OC2|no"
   ]
 }
