@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 96,
-  "maker_proposals": 4420,
+  "last_bucket": 97,
+  "maker_proposals": 4480,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 77,
+  "scans": 78,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 72694,
-  "total_listed_markets": 460203,
-  "total_verified_quotes": 4420,
+  "total_indicative_candidates": 73541,
+  "total_listed_markets": 466199,
+  "total_verified_quotes": 4480,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
@@ -588,6 +588,9 @@
     "KXMLS1HSCORE-26OCT14CLBCLT-CLB0CLT2:no",
     "KXMLS1HSCORE-26OCT14CLBCLT-CLB1CLT2:no",
     "KXMLS1HSCORE-26OCT14CLBCLT-CLB2CLT1:no",
+    "KXMLS1HSCORE-26OCT14COLMIN-COL0MIN2:no",
+    "KXMLS1HSCORE-26OCT14COLMIN-COL1MIN2:no",
+    "KXMLS1HSCORE-26OCT14COLMIN-COL2MIN1:no",
     "KXMLS1HSCORE-26OCT14DALSEA-DAL0SEA2:no",
     "KXMLS1HSCORE-26OCT14DALSEA-DAL1SEA2:no",
     "KXMLS1HSCORE-26OCT14DALSEA-DAL2SEA1:no",
@@ -605,6 +608,7 @@
     "KXMLS1HSCORE-26OCT14NSHSKC-NSH0SKC1:no",
     "KXMLS1HSCORE-26OCT14NSHSKC-NSH2SKC1:no",
     "KXMLS1HSCORE-26OCT14NSHSKC-NSH3SKC0:no",
+    "KXMLS1HSCORE-26OCT14RSLSJ-RSL0SJ2:no",
     "KXMLS1HSCORE-26OCT14STLVAN-STL0VAN2:no",
     "KXMLS1HSCORE-26OCT14STLVAN-STL1VAN2:no",
     "KXMLS1HSCORE-26OCT14STLVAN-STL2VAN1:no",
@@ -724,6 +728,7 @@
     "KXMLSSCORE-26OCT14CLBCLT-CLB4CLT0:no",
     "KXMLSSCORE-26OCT14CLBCLT-CLB4CLT1:no",
     "KXMLSSCORE-26OCT14CLBCLT-CLB4CLT2:no",
+    "KXMLSSCORE-26OCT14COLMIN-COL0MIN2:no",
     "KXMLSSCORE-26OCT14COLMIN-COL0MIN3:no",
     "KXMLSSCORE-26OCT14COLMIN-COL1MIN3:no",
     "KXMLSSCORE-26OCT14COLMIN-COL2MIN3:no",
