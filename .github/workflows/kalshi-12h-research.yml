@@ -3,6 +3,8 @@ name: Kalshi 12h Research (5-minute paper scans)
 # Finite 12-hour window: 2026-10-14 06:54Z to 18:54Z.
 # Python strictly guards end UTC even if GitHub cron remains enabled.
 # All code + research state live on kalshi-12h-research; never trade real money.
+# Primary PAPER portfolio buys observed 98-99c asks regardless of their closing time.
+# 12 hours is ONLY the observation window, NOT an expiration requirement for a trade.
 on:
   push:
     branches: [main]
