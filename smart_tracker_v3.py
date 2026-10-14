@@ -20,6 +20,7 @@ from pathlib import Path
 import smart_tracker_v2 as v2
 import paper_tracker_v31 as paper
 import wallet_discovery_v32 as discovery
+import copy_quality_v32 as quality
 
 VERSION = 31
 STATE_FILE = 'state/smart_tracker_v3.json'
@@ -29,6 +30,7 @@ GROUP_SECONDS = int(os.getenv('GROUP_SECONDS', '60'))
 MAX_SIGNAL_AGE = int(os.getenv('MAX_SIGNAL_AGE', '300'))
 MIN_BUY_USD = float(os.getenv('MIN_BUY_USD', '100'))
 MAX_BUY_PRICE = float(os.getenv('MAX_BUY_PRICE', '0.98'))  # Skip near-certain priced BUYs
+COPY_QUALITY_GATE = os.getenv('COPY_QUALITY_GATE', '0') == '1'  # Opt-in; never trading
 MAX_SUPPRESSED_RECORDS = int(os.getenv('MAX_SUPPRESSED_RECORDS', '2500'))
 MIN_SELL_USD = float(os.getenv('MIN_SELL_USD', '20'))
 MAX_ALERTS = int(os.getenv('MAX_ALERTS', '6'))
@@ -210,6 +212,15 @@ def add_fill(state,t,now):
     pos['buy_qty' if side=='BUY' else 'sell_qty']+=shares
     pos['buy_usd' if side=='BUY' else 'sell_usd']+=usd
     pos['count']+=1
+    if side == 'BUY':
+        # Passive price profile: deduplicated fills since monitoring began.
+        # This is NOT the fraction of winning predictions nor lifetime history.
+        stats=state.get('wallets',{}).get(wallet)
+        if isinstance(stats,dict) and shares>0:
+            stats['observed_buy_fills']=stats.get('observed_buy_fills',0)+1
+            stats['observed_buy_usd']=round(stats.get('observed_buy_usd',0)+usd,4)
+            if num(t.get('price'))>=MAX_BUY_PRICE:
+                stats['observed_expensive_buy_fills']=stats.get('observed_expensive_buy_fills',0)+1
     return True
 
 
@@ -415,6 +426,19 @@ def dispatch(state,now):
             del state['pending'][gid]
             market_skipped += 1
             continue
+        # Opt-in: protect COPY BUYs, not informational SELL / MIXED updates.
+        # Failed quality checks remain in a bounded, paper-free research log.
+        if COPY_QUALITY_GATE and kind=='BUY':
+            ok, reason, quality_facts=quality.assess(
+                g,state.get('wallets',{}).get(wallet),holdings,paper_candidate)
+            if not ok:
+                print('COPY QUALITY: skipped BUY',condition[:20],reason)
+                remember_suppressed_buy(state,g,now,'quality_'+reason,paper_candidate)
+                del state['pending'][gid]
+                market_skipped+=1
+                continue
+            # This record is saved only AFTER successful Telegram delivery.
+            paper_candidate['quality_v32']=quality_facts
         message=format_alert(g,kind,holdings,state['wallets'].get(wallet),now)
         if paper_note:
             message+='\n'+html.escape(paper_note)
