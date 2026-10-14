@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 71,
-  "maker_proposals": 2948,
+  "last_bucket": 72,
+  "maker_proposals": 3006,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 52,
+  "scans": 53,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 49199,
-  "total_listed_markets": 310283,
-  "total_verified_quotes": 2948,
+  "total_indicative_candidates": 50218,
+  "total_listed_markets": 316283,
+  "total_verified_quotes": 3006,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
@@ -158,6 +158,7 @@
     "KXAIMANU-26OCT17-T61:yes",
     "KXAISPEND1-26OCT17-T7500:yes",
     "KXAISPEND1-26OCT17-T8000:yes",
+    "KXAISPEND1-26OCT17-T8500:yes",
     "KXAISPEND1-26OCT17-T9500:yes",
     "KXAISPEND10-26OCT17-T650:no",
     "KXAISPEND10-26OCT17-T650:yes",
