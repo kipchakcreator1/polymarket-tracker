@@ -46,8 +46,8 @@ class Tracker32Tests(unittest.TestCase):
         condition = '0x' + 'a'*64
         g = {'wallet': '0x'+'b'*40, 'condition': condition,
              'first': 130, 'last': 130, 'title': 'Example',
-             'outcomes': {'tok': {'label': 'Yes', 'buy_usd': 50,
-                                  'buy_qty': 100, 'sell_usd': 0,
+             'outcomes': {'tok': {'label': 'Yes', 'buy_usd': 150,
+                                  'buy_qty': 300, 'sell_usd': 0,
                                   'sell_qty': 0, 'count': 1}}}
         state = {'pending': {v3.group_id(g['wallet'], condition): g},
                  'tracking': {}, 'wallets': {}}
