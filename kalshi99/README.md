@@ -6,7 +6,7 @@ Production Tracker 3.1 and experimental 3.2 are unchanged.
 
 ## What it does
 
-- Reads up to 6 pages × 500 **currently open** Kalshi markets (not the entire platform).
+- Reads up to 12 pages × 500 Kalshi markets **closing in the next 7 days** and requiring an `active` market status (not the entire platform). Excludes combo markets.
 - Shortlists YES/NO with indicative **asking prices** of $0.98–$0.99 and close times in 10 minutes–72 hours.
 - Fetches each shortlisted market's **public orderbook** (max 25 per run).
   Kalshi exposes bids, not asks. An actual YES buy ask is `$1 - highest NO bid`,
@@ -20,7 +20,7 @@ Production Tracker 3.1 and experimental 3.2 are unchanged.
 - If run with `--paper-trade`, reserves no more than the virtual **$4**,
   keeping at most one position open, holding to official settlement. No
   simulated early exits, no unearned settlement credits, no replay fills.
-- Only settles on an API response with `status=settled` and
+- Only settles on an API response with `status=finalized` and
   `result=yes/no`. Other results are kept pending for manual examination.
 - Remembers previously tested markets to avoid double-counting one market side.
 
