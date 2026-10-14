@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 70,
-  "maker_proposals": 2890,
+  "last_bucket": 71,
+  "maker_proposals": 2948,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 51,
+  "scans": 52,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 48181,
-  "total_listed_markets": 304283,
-  "total_verified_quotes": 2890,
+  "total_indicative_candidates": 49199,
+  "total_listed_markets": 310283,
+  "total_verified_quotes": 2948,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
@@ -467,6 +467,7 @@
     "KXMLS2HSPREAD-26OCT14LAFCATX-ATX2:no",
     "KXMLS2HSPREAD-26OCT14LAFCATX-LAFC2:no",
     "KXMLS2HSPREAD-26OCT14LAGPOR-LAG2:no",
+    "KXMLS2HSPREAD-26OCT14LAGPOR-POR2:no",
     "KXMLS2HSPREAD-26OCT14LAGPOR-POR2:yes",
     "KXMLS2HSPREAD-26OCT14MIANYC-MIA2:no",
     "KXMLS2HSPREAD-26OCT14MIANYC-NYC2:no",
@@ -480,7 +481,9 @@
     "KXMLS2HSPREAD-26OCT14RSLSJ-RSL2:yes",
     "KXMLS2HSPREAD-26OCT14RSLSJ-SJ2:no",
     "KXMLS2HSPREAD-26OCT14RSLSJ-SJ2:yes",
+    "KXMLS2HSPREAD-26OCT14SDHOU-HOU2:no",
     "KXMLS2HSPREAD-26OCT14SDHOU-HOU2:yes",
+    "KXMLS2HSPREAD-26OCT14SDHOU-SD2:no",
     "KXMLS2HSPREAD-26OCT14SDHOU-SD2:yes",
     "KXMLS2HSPREAD-26OCT14STLVAN-STL2:no",
     "KXMLS2HSPREAD-26OCT14STLVAN-STL2:yes",
