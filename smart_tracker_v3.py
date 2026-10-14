@@ -21,6 +21,7 @@ import smart_tracker_v2 as v2
 import paper_tracker_v31 as paper
 import wallet_discovery_v32 as discovery
 import copy_quality_v32 as quality
+import wallet_forensics_v32 as forensics
 
 VERSION = 31
 STATE_FILE = 'state/smart_tracker_v3.json'
@@ -31,6 +32,7 @@ MAX_SIGNAL_AGE = int(os.getenv('MAX_SIGNAL_AGE', '300'))
 MIN_BUY_USD = float(os.getenv('MIN_BUY_USD', '100'))
 MAX_BUY_PRICE = float(os.getenv('MAX_BUY_PRICE', '0.98'))  # Skip near-certain priced BUYs
 COPY_QUALITY_GATE = os.getenv('COPY_QUALITY_GATE', '0') == '1'  # Opt-in; never trading
+FORENSIC_SAMPLE_ENABLED = os.getenv('FORENSIC_SAMPLE_ENABLED', '0') == '1'
 MAX_SUPPRESSED_RECORDS = int(os.getenv('MAX_SUPPRESSED_RECORDS', '2500'))
 MIN_SELL_USD = float(os.getenv('MIN_SELL_USD', '20'))
 MAX_ALERTS = int(os.getenv('MAX_ALERTS', '6'))
@@ -293,6 +295,15 @@ def format_alert(g,kind,holdings=None,meta=None,now=None):
     if kind=='UNHELD':
         lines.append('⚠️ Snapshot does not show the purchased outcome. Possibly sold, redeemed, resolved, or below dust threshold. Do not assume they still hold it.')
     lines.append(f'📊 Profitable closed trading positions: {num(meta.get("winrate")):.0%}; NOT prediction accuracy')
+    factor=meta.get('profit_factor')
+    if factor is not None:
+        lines.append(f'📊 Closed-position profit factor: {factor:.2f} (not ROI)')
+    observed=meta.get('observed_buy_fills',0)
+    if observed>=10:
+        expensive=meta.get('observed_expensive_buy_fills',0)
+        lines.append(f'🔎 Observed expensive BUY fills: {expensive}/{observed} (partial monitored sample)')
+    if meta.get('mechanical_events_observed'):
+        lines.append('⚠️ Recent MERGE/SPLIT activity observed on this wallet; not proof this BUY was a prediction.')
     if g['url']:
         lines.append(f'<a href="{html.escape(g["url"],quote=True)}">Market</a> | '
                      f'<a href="https://polymarket.com/profile/{g["wallet"]}">Wallet</a>')
@@ -475,6 +486,8 @@ def main():
         raise RuntimeError('No wallet candidates. API discovery failed.')
     checked,score_errors=v2.score_candidates(state,now)
     eligible=v2.qualified_wallets(state,now)[:MONITOR_MAX]
+    if FORENSIC_SAMPLE_ENABLED and eligible:
+        forensics.sample_eligible(state,eligible,now)
     if not eligible:
         print('WARNING: No qualified wallets yet. Scoring will continue.')
     discovered=sum(1 for w in state['wallets'].values() if w.get('checked_at'))
