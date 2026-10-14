@@ -151,6 +151,9 @@ def run(state_path=ex.DEFAULT_STATE, snapshot_path=ex.DEFAULT_SNAPSHOTS,
     for key, message in due:
         sender(token, chat, message)
         ack["sent"].append(key)
+        if key == "initial" and ex.START <= now < ex.END:
+            # Initial report IS this hour\'s summary; do not send it twice.
+            ack["sent"].append("hour|" + now.strftime("%Y%m%d%H"))
         dest = Path(ack_path)
         dest.parent.mkdir(parents=True, exist_ok=True)
         temp = dest.with_name(dest.name + ".tmp")
