@@ -100,12 +100,23 @@ def parse_utc(value: str | None) -> datetime | None:
         return None
 
 
-def list_open_markets(pages: int, page_size: int = 500) -> tuple[list[dict], int]:
+def list_open_markets(pages: int, page_size: int = 500,
+                      horizon_hours: int = 72, now: datetime | None = None) -> tuple[list[dict], int]:
+    """API-supported close-time window avoids arbitrary first pages of all open markets.
+
+    Kalshi does not permit status=open combined with min/max close filters;
+    query by close timestamps and locally require status=open.
+    """
+    now = now or datetime.now(timezone.utc)
     found = []
     cursor = ""
     fetched = 0
     for _ in range(pages):
-        params = {"status": "open", "limit": page_size}
+        params = {
+            "limit": page_size,
+            "min_close_ts": int(now.timestamp()) + 600,
+            "max_close_ts": int(now.timestamp()) + horizon_hours * 3600,
+        }
         if cursor:
             params["cursor"] = cursor
         data = get_json("/markets", params)
@@ -113,7 +124,7 @@ def list_open_markets(pages: int, page_size: int = 500) -> tuple[list[dict], int
         if not isinstance(batch, list):
             raise ValueError("Unexpected public market response")
         fetched += 1
-        found.extend(batch)
+        found.extend(m for m in batch if m.get("status") == "open")
         new_cursor = data.get("cursor") or ""
         if not batch or not new_cursor or new_cursor == cursor:
             break
@@ -285,7 +296,7 @@ def run(args) -> dict:
     now = datetime.now(timezone.utc)
     state = load_state(args.state)
     settled, settlement_errors = settle_positions(state)
-    markets, pages = list_open_markets(args.pages, args.page_size)
+    markets, pages = list_open_markets(args.pages, args.page_size, args.horizon, now)
     shortlist = []
     for market in markets:
         shortlist.extend(candidate_sides(market, now, args.horizon))
@@ -303,6 +314,7 @@ def run(args) -> dict:
         "strategy": "98-99c PRICE-ONLY BASELINE; probability not independently estimated",
         "real_trading_enabled": False,
         "pages_read": pages, "markets_scanned": len(markets),
+        "discovery_mode": "min_close_ts/max_close_ts window; local status=open filter",
         "indicative_candidates": len(shortlist), "orderbooks_checked": min(len(shortlist), args.books),
         "orderbook_errors": book_errors, "settlement_errors": settlement_errors,
         "paper_trading_enabled": args.paper_trade,
