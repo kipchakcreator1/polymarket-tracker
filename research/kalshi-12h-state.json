@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 94,
-  "maker_proposals": 4300,
+  "last_bucket": 95,
+  "maker_proposals": 4360,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 75,
+  "scans": 76,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 70984,
-  "total_listed_markets": 448208,
-  "total_verified_quotes": 4300,
+  "total_indicative_candidates": 71841,
+  "total_listed_markets": 454208,
+  "total_verified_quotes": 4360,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
@@ -692,7 +692,9 @@
     "KXMLSFTTS-26OCT14CHIPHI-NONE:no",
     "KXMLSFTTS-26OCT14CLBCLT-NONE:no",
     "KXMLSFTTS-26OCT14COLMIN-NONE:no",
+    "KXMLSFTTS-26OCT14DCUNYRB-NONE:no",
     "KXMLSFTTS-26OCT14RSLSJ-NONE:no",
+    "KXMLSFTTS-26OCT14TORORL-NONE:no",
     "KXMLSSCORE-26OCT14CHIPHI-CHI0PHI3:no",
     "KXMLSSCORE-26OCT14CHIPHI-CHI1PHI4:no",
     "KXMLSSCORE-26OCT14CHIPHI-CHI2PHI4:no",
@@ -711,6 +713,7 @@
     "KXMLSSCORE-26OCT14CINNE-CIN4NE2:no",
     "KXMLSSCORE-26OCT14CINNE-CIN4NE3:no",
     "KXMLSSCORE-26OCT14CINNE-CIN5NE1:no",
+    "KXMLSSCORE-26OCT14CLBCLT-CLB0CLT0:no",
     "KXMLSSCORE-26OCT14CLBCLT-CLB0CLT3:no",
     "KXMLSSCORE-26OCT14CLBCLT-CLB1CLT3:no",
     "KXMLSSCORE-26OCT14CLBCLT-CLB2CLT3:no",
