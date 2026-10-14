@@ -11,7 +11,7 @@ from kalshi99 import scanner as s
 
 def fake_market(ticker="KXTEST-ONE", ask_yes="0.99"):
     return {
-        "status": "open", "market_type": "binary",
+        "status": "active", "market_type": "binary",
         "ticker": ticker, "title": "Example",
         "close_time": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(),
         "yes_ask_dollars": ask_yes, "no_ask_dollars": "0.03",
@@ -91,7 +91,7 @@ class KalshiPaperTests(unittest.TestCase):
         with patch.object(s, "get_json", return_value={"market": {"status": "closed", "result": "yes"}}):
             settled, errors = s.settle_positions(state)
         self.assertEqual((settled, errors), (0, 0))
-        with patch.object(s, "get_json", return_value={"market": {"status": "settled", "result": "yes"}}):
+        with patch.object(s, "get_json", return_value={"market": {"status": "finalized", "result": "yes"}}):
             settled, errors = s.settle_positions(state)
         self.assertEqual((settled, errors), (1, 0))
         self.assertEqual(state["cash_usd"], "4.03")
@@ -107,7 +107,7 @@ class KalshiPaperTests(unittest.TestCase):
             "close_time": now.isoformat()
         }
         s.paper_enter(state, quote, now)
-        with patch.object(s, "get_json", return_value={"market": {"status": "settled", "result": "no"}}):
+        with patch.object(s, "get_json", return_value={"market": {"status": "finalized", "result": "no"}}):
             s.settle_positions(state)
         self.assertEqual(state["cash_usd"], "0.03")
         self.assertEqual(state["history"][0]["realized_pnl_usd"], "-3.97")
