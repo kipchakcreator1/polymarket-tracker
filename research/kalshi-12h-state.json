@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 78,
-  "maker_proposals": 3358,
+  "last_bucket": 79,
+  "maker_proposals": 3418,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 59,
+  "scans": 60,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 56198,
-  "total_listed_markets": 352273,
-  "total_verified_quotes": 3358,
+  "total_indicative_candidates": 57177,
+  "total_listed_markets": 358273,
+  "total_verified_quotes": 3418,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
