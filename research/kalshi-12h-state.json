@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 79,
-  "maker_proposals": 3418,
+  "last_bucket": 80,
+  "maker_proposals": 3478,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 60,
+  "scans": 61,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 57177,
-  "total_listed_markets": 358273,
-  "total_verified_quotes": 3418,
+  "total_indicative_candidates": 58145,
+  "total_listed_markets": 364273,
+  "total_verified_quotes": 3478,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
@@ -795,6 +795,7 @@
     "KXSBLSPREAD-26OCT141200HANBRA-HAN7:yes",
     "KXSBLTOTAL-26OCT141200HANBRA-100:no",
     "KXSBLTOTAL-26OCT141200HANBRA-100:yes",
+    "KXSBLTOTAL-26OCT141200HANBRA-110:no",
     "KXSBLTOTAL-26OCT141200HANBRA-110:yes",
     "KXSBLTOTAL-26OCT141200HANBRA-120:yes",
     "KXSBLTOTAL-26OCT141200HANBRA-130:yes",
@@ -879,6 +880,7 @@
     "KXSVKCUPTOTAL-26OCT14VNTDBB-1:yes",
     "KXT20MATCH-26OCT140600QNS1SCGLDCC-GLDCC:yes",
     "KXT20MATCH-26OCT140600QNS1SCGLDCC-QNS1SC:no",
+    "KXT20MATCH-26OCT140800MBZCCOHAR1-MBZCC:no",
     "KXT20MATCH-26OCT140800MBZCCOHAR1-OHAR1:yes",
     "KXTACAPORTSPREAD-26OCT14SANGIL-SAN2:no",
     "KXTFF1LIGSPREAD-26OCT14BATIAS-IAS3:no",
@@ -1053,6 +1055,7 @@
     "KXVTBSPREAD-26OCT141200URAUNI-UNI23:no",
     "KXVTBSPREAD-26OCT141200URAUNI-UNI3:no",
     "KXVTBSPREAD-26OCT141200URAUNI-UNI3:yes",
+    "KXVTBSPREAD-26OCT141200URAUNI-UNI7:yes",
     "KXVTBSPREAD-26OCT141200URAUNI-URA11:no",
     "KXVTBSPREAD-26OCT141200URAUNI-URA15:no",
     "KXVTBSPREAD-26OCT141200URAUNI-URA19:no",
