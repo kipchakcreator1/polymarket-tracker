@@ -111,6 +111,11 @@ def main() -> None:
             write_handoff_flag(True)
             return
         one_pass()
+        # For the initial workflow push only: verify automatic GitHub
+        # workflow_dispatch continuation promptly, not five hours later.
+        if os.environ.get("KALSHI_INITIAL_CHAIN_PROBE") == "1":
+            write_handoff_flag(True)
+            return
         now = time.time()
         target = min(next_scan_epoch(now) + 4, END.timestamp())
         segment_last = start + SEGMENT_SECONDS - HANDOFF_RESERVE_SECONDS
