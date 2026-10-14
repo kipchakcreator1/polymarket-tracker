@@ -323,6 +323,7 @@ def remember_suppressed_buy(state,g,now,reason,quote=None):
                 'source_ts':g['last'],'observed_at':now,
                 'title':g.get('title',''),'url':g.get('url',''),
                 'outcomes':[p.get('label','') for _,p in purchased],
+                'outcome_tokens':[token for token,_ in purchased],
                 'source_buy_usd':round(value,4),
                 'source_buy_shares':round(shares,4),
                 'source_avg_buy':round(value/shares,6) if shares else None,
