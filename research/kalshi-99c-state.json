@@ -1,9 +1,25 @@
 {
-  "cash_usd": "4.00",
+  "cash_usd": "0.07",
   "history": [],
   "mode": "PAPER_ONLY",
-  "positions": [],
+  "positions": [
+    {
+      "baseline": "PRICE_ONLY",
+      "close_time": "2026-10-20T17:00:00+00:00",
+      "cost_usd": "3.93",
+      "entry_time": "2026-10-14T05:41:03.605467+00:00",
+      "fee_estimated_usd": "0.01",
+      "independent_probability": null,
+      "price": "0.9800",
+      "qty": 4,
+      "side": "yes",
+      "ticker": "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4",
+      "title": "New York G over 3.5 points scored"
+    }
+  ],
   "schema": 1,
-  "seen": [],
+  "seen": [
+    "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4:yes"
+  ],
   "starting_usd": "4.00"
 }
