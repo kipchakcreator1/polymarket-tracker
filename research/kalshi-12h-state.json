@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 73,
-  "maker_proposals": 3064,
+  "last_bucket": 74,
+  "maker_proposals": 3122,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 54,
+  "scans": 55,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 51206,
-  "total_listed_markets": 322283,
-  "total_verified_quotes": 3064,
+  "total_indicative_candidates": 52206,
+  "total_listed_markets": 328283,
+  "total_verified_quotes": 3122,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
@@ -462,6 +462,9 @@
     "KXMLS1HSCORE-26OCT14NSHSKC-NSH0SKC1:no",
     "KXMLS1HSCORE-26OCT14NSHSKC-NSH2SKC1:no",
     "KXMLS1HSCORE-26OCT14NSHSKC-NSH3SKC0:no",
+    "KXMLS1HSCORE-26OCT14TORORL-TOR0ORL2:no",
+    "KXMLS1HSCORE-26OCT14TORORL-TOR1ORL2:no",
+    "KXMLS1HSCORE-26OCT14TORORL-TOR2ORL1:no",
     "KXMLS1HSPREAD-26OCT14LAFCATX-ATX2:no",
     "KXMLS1HSPREAD-26OCT14NSHSKC-SKC2:no",
     "KXMLS2HSPREAD-26OCT14CHIPHI-PHI2:no",
