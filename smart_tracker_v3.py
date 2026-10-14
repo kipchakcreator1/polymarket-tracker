@@ -273,6 +273,8 @@ def format_alert(g,kind,holdings=None,meta=None,now=None):
            '🏷 '+html.escape(g['title']),
            '🕓 Latest trade: '+dt.datetime.fromtimestamp(g['last'],dt.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')+
            f' (~{max(0,(now-g["last"])//60)}m ago)']
+    if os.getenv('V32_TELEGRAM_ALERT_LABEL') == '1':
+        lines.insert(0, '🧪 <b>TRACKER 3.2 — experimental signal</b>')
     for token,p in sorted(g['outcomes'].items(),key=lambda x:-(x[1]['buy_usd']+x[1]['sell_usd'])):
         line=(f'🎯 {html.escape(p["label"])}: {p["count"]} fills; '
               f'BUY ${p["buy_usd"]:,.2f} / SELL ${p["sell_usd"]:,.2f}; '
