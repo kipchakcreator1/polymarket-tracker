@@ -1,88 +1,65 @@
-name: Kalshi 12h Research (5-minute paper scans)
+name: Kalshi 12h Research (continuous 5-minute PAPER loop)
 
-# Finite 12-hour window: 2026-10-14 06:54Z to 18:54Z.
-# Python strictly guards end UTC even if GitHub cron remains enabled.
-# All code + research state live on kalshi-12h-research; never trade real money.
-# Primary PAPER portfolio buys observed 98-99c asks regardless of their closing time.
-# 12 hours is ONLY the observation window, NOT an expiration requirement for a trade.
+# 12h prospective market observations: 2026-10-14 06:54Z -> 18:54Z.
+# Hosted runners: 6h maximum per job. The Python loop uses at most 4h50
+# before dispatching a successor. Only observations, NO real Kalshi orders.
+# CRON REMOVED: avoid skipped/massively delayed 5-minute schedule triggers.
+# Continuation is still best-effort: hosted runner/API interruptions can happen.
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/kalshi-12h-research.yml'
-  schedule:
-    - cron: '2-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: kalshi-12h-prospective-unique-writer
   cancel-in-progress: false
 
 jobs:
-  read-only-research:
+  continuous-paper:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 340
     steps:
-      - name: Checkout isolated research branch
+      - name: Checkout isolated 12-hour research branch
         uses: actions/checkout@v4
         with:
           ref: kalshi-12h-research
           persist-credentials: true
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: Install Python runtime
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Offline tests, no credentials
+      - name: Check paper-only safety and continuation logic
         run: |
-          python -m py_compile kalshi99/experiment12h.py kalshi99/test_experiment12h.py kalshi99/experiment12h_telegram.py kalshi99/test_experiment12h_telegram.py
-          python -m unittest kalshi99.test_scanner kalshi99.test_experiment12h kalshi99.test_experiment12h_telegram -v
+          python -m py_compile kalshi99/experiment12h.py kalshi99/experiment12h_telegram.py kalshi99/loop12h.py
+          python -m unittest kalshi99.test_scanner kalshi99.test_experiment12h kalshi99.test_experiment12h_telegram kalshi99.test_loop12h -v
 
-      - name: Prospectively sample public Kalshi asks (PAPER ONLY, 12h cutoff)
-        run: |
-          python -m kalshi99.experiment12h
-
-      - name: Save 5-minute research snapshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kalshi-12h-prospective-report
-          path: artifacts/kalshi-12h-latest.json
-          if-no-files-found: ignore
-          retention-days: 30
-
-      - name: Persist ONLY separate experiment research files
-        if: success()
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A research/
-          if ! git diff --cached --quiet; then
-            git commit -m 'chore: 12h public-only market observation [skip ci]'
-            git pull --rebase origin kalshi-12h-research
-            git push origin HEAD:kalshi-12h-research
-          fi
-      - name: Send 12h Kalshi PAPER signals and summaries via Tracker 3.2 bot
-        if: success()
+      - name: Continuously scan, notify Tracker 3.2, and persist each 5m tick
+        id: loop
         env:
+          KALSHI_INITIAL_CHAIN_PROBE: ${{ github.event_name == 'push' && '1' || '0' }}
           TELEGRAM_V31_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_V32_BOT_TOKEN: ${{ secrets.TELEGRAM_V32_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python -m kalshi99.experiment12h_telegram
+        run: python -u -m kalshi99.loop12h
 
-      - name: Save Telegram dedup checkpoint to 12h research branch ONLY
-        if: success()
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A research/kalshi-12h-telegram.json
-          if ! git diff --cached --quiet; then
-            git commit -m 'chore: 12h Telegram acknowledgment [skip ci]'
-            git pull --rebase origin kalshi-12h-research
-            git push origin HEAD:kalshi-12h-research
-          fi
+      - name: Pass running experiment to next hosted runner if needed
+        if: ${{ steps.loop.outputs.chain == 'true' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'kalshi-12h-research.yml',
+              ref: 'main'
+            });
