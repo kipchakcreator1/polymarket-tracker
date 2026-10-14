@@ -1,4 +1,4 @@
-name: Tracker v3.2 Experimental Telegram (separate chat)
+name: Tracker v3.2 Experimental Telegram (separate bot)
 
 # This file is staged ONLY on tracker-v3.2-testing.
 # GitHub schedules workflows from the default branch; a small, separately
@@ -30,11 +30,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Check destination and monitor public trades (no orders)
+      - name: Validate separate bot and monitor public trades (no orders)
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_V31_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_V32_CHAT_ID: ${{ secrets.TELEGRAM_V32_CHAT_ID }}
+          TELEGRAM_V31_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_V32_BOT_TOKEN: ${{ secrets.TELEGRAM_V32_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CANDIDATE_TARGET: '1250'
           SCORE_BATCH: '80'
           MAX_TRACKED: '50'
