@@ -36,7 +36,8 @@ def validated_destination(env: dict) -> tuple[str, str]:
 
 
 def usd(amount) -> str:
-    return f"${D(str(amount)):.2f}"
+    value = D(str(amount))
+    return f"-${abs(value):.2f}" if value < 0 else f"${value:.2f}"
 
 
 def event_key(pos: dict, kind: str) -> str:
