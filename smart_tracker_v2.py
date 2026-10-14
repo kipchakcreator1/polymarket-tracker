@@ -187,8 +187,17 @@ def closed_stats(wallet):
     pnl = [asfloat(x.get("realizedPnl")) for x in out]
     n = len(pnl)
     wins = sum(1 for v in pnl if v > 0)
+    gross_gains = sum(v for v in pnl if v > 0)
+    gross_losses = -sum(v for v in pnl if v < 0)
+    # This is closed-position realized PnL, NOT predictive win rate or ROI.
+    # No losses => profit factor is UNKNOWN (not infinite/best).
+    profit_factor = round(gross_gains / gross_losses, 4) if gross_losses > 1e-8 else None
     return {"n": n, "wins": wins, "winrate": round(wins / n, 4) if n else 0,
-            "recent_realized_pnl": round(sum(pnl), 2)}
+            "recent_realized_pnl": round(sum(pnl), 2),
+            "gross_gains": round(gross_gains, 4),
+            "gross_losses": round(gross_losses, 4),
+            "profit_factor": profit_factor,
+            "net_per_closed": round(sum(pnl) / n, 4) if n else None}
 
 
 def score_candidates(state, now):
