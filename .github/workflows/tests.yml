@@ -19,10 +19,13 @@ jobs:
           python-version: '3.11'
       - name: Compile Python source
         run: |
-          python -m py_compile smart_tracker_v2.py smart_tracker_v3.py paper_tracker_v31.py wallet_discovery_v32.py tests/test_tracker_v32.py tools/check_market_discovery_api.py
+          python -m py_compile smart_tracker_v2.py smart_tracker_v3.py paper_tracker_v31.py wallet_discovery_v32.py tests/test_tracker_v32.py tools/check_market_discovery_api.py tools/dry_run_v32.py
       - name: Offline unit tests (no API keys, Telegram or real trades)
         run: |
           python -m unittest discover -s tests -v
       - name: Public API live smoke (read-only; no credentials)
         run: |
           PYTHONPATH=. python tools/check_market_discovery_api.py
+      - name: Read-only full pipeline preview (never sends Telegram)
+        run: |
+          PYTHONPATH=. python tools/dry_run_v32.py
