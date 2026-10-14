@@ -1,0 +1,10 @@
+{
+  "experiment": "shadow-observation-15h",
+  "run_number": 1,
+  "max_runs": 15,
+  "started_at_utc": "2026-10-14T04:36:53Z",
+  "last_triggered_at_utc": "2026-10-14T04:36:53Z",
+  "target_branch": "tracker-v3.2-testing",
+  "mode": "read-only",
+  "notes": "Increment run_number once each hour using GitHub update_file on testing branch only; PR CI runs shadow sampler. Never modify main, trigger tracker.yml, send Telegram or trade."
+}
