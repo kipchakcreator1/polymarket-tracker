@@ -101,6 +101,20 @@ class Experiment12HourTests(unittest.TestCase):
         self.assertEqual(result["portfolios"]["taker_12h"]["open"], 1)
         self.assertEqual(result["portfolios"]["taker_near_1h"]["open"], 0)
 
+    def test_already_existing_99c_quote_closing_42_hours_later_is_paper_bought_now(self):
+        # The 12-hour limit governs the STUDY, not how long a contract may remain open.
+        ms = [market("TEST-LONG", 42, "0.99")]
+        qs = [quote("TEST-LONG", 42)]
+        with patch.object(ex.base, "list_open_markets", return_value=(ms, 1)):
+            with patch.object(ex.base, "quote_candidates", return_value=(qs, 0)):
+                outcome = self.run_at(ex.START + timedelta(minutes=1))
+        self.assertEqual(outcome["status"], "ACTIVE")
+        self.assertEqual(outcome["portfolios"]["taker_12h"]["open"], 1)
+        self.assertEqual(outcome["portfolios"]["taker_12h"]["cash_usd"], "0.07")
+        self.assertEqual(outcome["portfolios"]["taker_near_1h"]["open"], 0)
+        self.assertEqual(outcome["latest_scan"]["new_paper_positions"]["taker_12h"]["ticker"], "TEST-LONG")
+        self.assertEqual(outcome["portfolios"]["taker_12h"]["realized_pnl_usd"], "0.00")
+
     def test_no_prices_means_no_fabricated_position(self):
         ms = [market("TEST-ONE", 0.5)]
         with patch.object(ex.base, "list_open_markets", return_value=(ms, 1)):
