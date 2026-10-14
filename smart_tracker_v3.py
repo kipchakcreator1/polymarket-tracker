@@ -29,6 +29,7 @@ GROUP_SECONDS = int(os.getenv('GROUP_SECONDS', '60'))
 MAX_SIGNAL_AGE = int(os.getenv('MAX_SIGNAL_AGE', '300'))
 MIN_BUY_USD = float(os.getenv('MIN_BUY_USD', '100'))
 MAX_BUY_PRICE = float(os.getenv('MAX_BUY_PRICE', '0.98'))  # Skip near-certain priced BUYs
+MAX_SUPPRESSED_RECORDS = int(os.getenv('MAX_SUPPRESSED_RECORDS', '2500'))
 MIN_SELL_USD = float(os.getenv('MIN_SELL_USD', '20'))
 MAX_ALERTS = int(os.getenv('MAX_ALERTS', '6'))
 MAX_PER_WALLET = int(os.getenv('MAX_PER_WALLET', '2'))
@@ -288,6 +289,42 @@ def format_alert(g,kind,holdings=None,meta=None,now=None):
     return '\n'.join(lines)
 
 
+def remember_suppressed_buy(state,g,now,reason,quote=None):
+    """Record a skipped BUY for research, WITHOUT Telegram or a paper stake.
+
+    Preserve its wallet/market tracking so later public SELLs can still be
+    monitored. Bounded history lives in the existing state JSON (v31 schema).
+    """
+    ledger=state.setdefault('suppressed_v32',{'records':{},'counts':{}})
+    records=ledger.setdefault('records',{})
+    counts=ledger.setdefault('counts',{})
+    key=f"{g['wallet']}|{g['condition']}|{g['last']}|{reason}"
+    if key not in records:
+        if MAX_SUPPRESSED_RECORDS>0:
+            if len(records)>=MAX_SUPPRESSED_RECORDS:
+                oldest=min(records,key=lambda k:records[k].get('observed_at',0))
+                del records[oldest]
+            purchased=[(token,p) for token,p in g['outcomes'].items() if p['buy_qty']>0]
+            shares=sum(p['buy_qty'] for _,p in purchased)
+            value=sum(p['buy_usd'] for _,p in purchased)
+            records[key]={
+                'wallet':g['wallet'],'condition':g['condition'],
+                'source_ts':g['last'],'observed_at':now,
+                'title':g.get('title',''),'url':g.get('url',''),
+                'outcomes':[p.get('label','') for _,p in purchased],
+                'source_buy_usd':round(value,4),
+                'source_buy_shares':round(shares,4),
+                'source_avg_buy':round(value/shares,6) if shares else None,
+                'reason':reason,
+                'quote_best_ask':quote.get('best_ask') if quote else None,
+                'quote_avg':quote.get('avg_price') if quote else None,
+                'telegram_sent':False,
+                'paper_stake_created':False,
+            }
+            counts[reason]=counts.get(reason,0)+1
+    state.setdefault('tracking',{})[group_id(g['wallet'],g['condition'])]=now
+
+
 def candidate_groups(state,now):
     ready=[]; removed=collections.Counter()
     for gid,g in list(state['pending'].items()):
@@ -303,6 +340,7 @@ def candidate_groups(state,now):
             for p in g['outcomes'].values()
         ):
             removed['high_buy_price']+=1
+            remember_suppressed_buy(state,g,now,'source_avg_buy_at_or_above_limit')
             del state['pending'][gid]
             continue
         if kind=='BUY' and buy<MIN_BUY_USD:
@@ -373,6 +411,7 @@ def dispatch(state,now):
             paper_candidate.get('avg_price',0)>=MAX_BUY_PRICE
         ):
             print('PRICE FILTER: market ask too high',condition[:20])
+            remember_suppressed_buy(state,g,now,'current_ask_at_or_above_limit',paper_candidate)
             del state['pending'][gid]
             market_skipped += 1
             continue
