@@ -2,8 +2,8 @@
   "api_errors": 0,
   "end_utc": "2026-10-14T18:54:00+00:00",
   "finalized_at": null,
-  "last_bucket": 92,
-  "maker_proposals": 4182,
+  "last_bucket": 93,
+  "maker_proposals": 4242,
   "mode": "PAPER_ONLY_12H",
   "portfolios": {
     "taker_12h": {
@@ -46,12 +46,12 @@
       "starting_usd": "4.00"
     }
   },
-  "scans": 73,
+  "scans": 74,
   "schema": 1,
   "start_utc": "2026-10-14T06:54:00+00:00",
-  "total_indicative_candidates": 69258,
-  "total_listed_markets": 436218,
-  "total_verified_quotes": 4182,
+  "total_indicative_candidates": 70129,
+  "total_listed_markets": 442214,
+  "total_verified_quotes": 4242,
   "unique_verified_market_sides": [
     "KX10YRDIRHW-26OCT16H-T5.25:yes",
     "KX10YRDIRHW-26OCT16H-T5.26:yes",
@@ -1031,8 +1031,11 @@
     "KXUCL1HSCORE-26OCT14ASKLFC-ASK1LFC2:no",
     "KXUCL1HSCORE-26OCT14ASKLFC-ASK2LFC1:no",
     "KXUCL1HSCORE-26OCT14ASKLFC-ASK2LFC2:no",
+    "KXUCL1HSCORE-26OCT14AVLFEN-AVL0FEN2:no",
+    "KXUCL1HSCORE-26OCT14AVLFEN-AVL1FEN2:no",
     "KXUCL1HSCORE-26OCT14AVLFEN-AVL2FEN1:no",
     "KXUCL1HSCORE-26OCT14AVLFEN-AVL2FEN2:no",
+    "KXUCL1HSCORE-26OCT14AVLFEN-AVL3FEN0:no",
     "KXUCL1HSCORE-26OCT14BOGBVB-BOG1BVB2:no",
     "KXUCL1HSCORE-26OCT14BOGBVB-BOG2BVB0:no",
     "KXUCL1HSCORE-26OCT14BOGBVB-BOG2BVB1:no",
@@ -1198,6 +1201,7 @@
     "KXVTBSPREAD-26OCT140830SAMENI-SAM23:no",
     "KXVTBSPREAD-26OCT140830SAMENI-SAM3:no",
     "KXVTBSPREAD-26OCT140830SAMENI-SAM7:no",
+    "KXVTBSPREAD-26OCT141200URAUNI-UNI11:no",
     "KXVTBSPREAD-26OCT141200URAUNI-UNI19:no",
     "KXVTBSPREAD-26OCT141200URAUNI-UNI19:yes",
     "KXVTBSPREAD-26OCT141200URAUNI-UNI23:no",
