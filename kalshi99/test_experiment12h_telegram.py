@@ -67,7 +67,7 @@ class TwelveHourTelegramTests(unittest.TestCase):
         due = notify.due_messages(self.portfolio, {"sent": []}, ex.START)
         self.assertEqual(sum(k.startswith("buy|") for k, _ in due), 2)
 
-    def test_quote_alert_only_when_under_1h_and_new(self):
+    def test_quote_alerts_observe_near_and_long_without_claiming_paper_fills(self):
         near = {
             "ticker": "TEST-1", "title": "Near test", "side": "no",
             "sampled_ask": "0.9900", "available_at_best_ask": 10,
@@ -78,13 +78,49 @@ class TwelveHourTelegramTests(unittest.TestCase):
         lst = notify.due_messages(self.portfolio, {"sent": []}, ex.START,
                                   {"quotes": [far, near]})
         quotes = [(k, v) for k, v in lst if k.startswith("quote|")]
-        self.assertEqual(len(quotes), 1)
+        self.assertEqual(len(quotes), 2)
         self.assertIn("НЕ ПОКУПКА", quotes[0][1])
         lst2 = notify.due_messages(self.portfolio,
-                                   {"sent": ["initial", quotes[0][0]]},
+                                   {"sent": ["initial"] + [k for k, _ in quotes]},
                                    ex.START + timedelta(minutes=1),
                                    {"quotes": [near]})
         self.assertFalse(any(x.startswith("quote|") for x, _ in lst2))
+
+    def test_scan_heartbeat_from_real_snapshot_once_per_bucket(self):
+        snapshot = {
+            "sampled_at_utc": (ex.START + timedelta(minutes=10)).isoformat(),
+            "bucket": 2, "active_market_rows": 5000,
+            "indicative_candidates": 750, "orderbooks_requested": 60,
+            "verified_quotes": 30,
+            "quotes": [{"ticker": "LONG", "title": "Example long dated contract",
+                        "side": "yes", "sampled_ask": "0.9800",
+                        "hours_to_close": 42.0,
+                        "available_at_best_ask": 4,
+                        "hypothetical_qty": 4, "win_profit_taker_usd": "0.07",
+                        "loss_taker_usd": "3.93"}],
+        }
+        Path(self.snapshot).write_text(json.dumps(snapshot) + "\n")
+        send = Mock()
+        now = ex.START + timedelta(minutes=11)
+        count = notify.run(self.state, self.snapshot, self.ack, now, VALID, send)
+        self.assertEqual(count, 3)  # initial + real scan receipt + long quote
+        messages = [call.args[2] for call in send.call_args_list]
+        self.assertTrue(any("ПРОВЕРКА РЫНКА" in m and "42.0ч" in m for m in messages))
+        self.assertTrue(any("НАБЛЮДЕНИЕ, НЕ ПОКУПКА" in m for m in messages))
+        self.assertEqual(notify.run(self.state, self.snapshot, self.ack, now, VALID, send), 0)
+
+    def test_stale_snapshot_never_emits_false_heartbeat(self):
+        snapshot = {
+            "sampled_at_utc": ex.START.isoformat(),
+            "bucket": 0, "active_market_rows": 0,
+            "indicative_candidates": 0, "orderbooks_requested": 0,
+            "verified_quotes": 0, "quotes": [],
+        }
+        Path(self.snapshot).write_text(json.dumps(snapshot) + "\n")
+        send = Mock()
+        now = ex.START + timedelta(minutes=45)
+        self.assertEqual(notify.run(self.state, self.snapshot, self.ack, now, VALID, send), 1)
+        self.assertNotIn("ПРОВЕРКА РЫНКА", send.call_args.args[2])
 
     def test_failed_send_does_not_ack(self):
         def fail(*args):
