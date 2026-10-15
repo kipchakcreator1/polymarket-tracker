@@ -242,8 +242,10 @@ def active_form(rows):
         if not isinstance(pos, dict):
             raise ValueError("Invalid active position row")
         # OPEN is broader than live holdings: exclude resolved/redeemable.
-        if pos.get("redeemable") is True or pos.get("status") != "OPEN":
+        if pos.get("redeemable") is True or pos.get("status") == "REDEEMABLE":
             continue
+        if pos.get("status") != "OPEN" or pos.get("redeemable") is not False:
+            raise ValueError("Unknown active position status")
         size = v2.asfloat(pos.get("current_size"), float("nan"))
         if not math.isfinite(size):
             raise ValueError("Unknown current size")
