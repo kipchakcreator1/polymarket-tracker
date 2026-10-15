@@ -7,6 +7,7 @@ v3.1/v3.2. Closed-position win rate is NOT forecasting accuracy.
 import concurrent.futures
 import html
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -25,19 +26,25 @@ MIN_USD = float(os.getenv("V33_MIN_TRADE_USD", "50"))
 MIN_PRICE = float(os.getenv("V33_MIN_PRICE", "0.15"))
 MAX_PRICE = float(os.getenv("V33_MAX_PRICE", "0.85"))
 MAX_RISE = float(os.getenv("V33_MAX_PRICE_RISE", "0.05"))
+MAX_DROP = float(os.getenv("V33_MAX_PRICE_DROP", "0.05"))
+MAX_SPREAD = float(os.getenv("V33_MAX_SPREAD", "0.05"))
+MAX_BOOK_SLIPPAGE = float(os.getenv("V33_MAX_BOOK_SLIPPAGE", "0.02"))
 # Wallets supplied by the user stay at the front of a qualified shortlist.
 # This never bypasses the same minimum history, PnL or risk filters.
 PRIORITY_WALLETS = frozenset(w.strip().lower() for w in
     os.getenv("V33_PRIORITY_WALLETS", "").split(",")
     if v2.WALLET_RE.fullmatch(w.strip().lower()))
-FAST_5M_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-5m-\d+\b", re.I)
+FAST_5M_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-5m-(\d+)\b", re.I)
 MAX_AGE = 300
 MAX_CATCHUP = 7200
 # Re-evaluate recent closed-position results at alert time, not only at
 # the wallet-discovery refresh (which can be seven days old).
 RECENT_CLOSED_WINDOW = 20
 RECENT_MIN_POSITIVE_RATE = .60
+RECENT_MIN_PROFIT_FACTOR = 1.25
 RECENT_MAX_LOSS_STREAK = 3
+MAX_FAST_TRADE_AGE = 75
+FAST_MARKET_END_BUFFER = 90
 RECENT_CACHE_SECONDS = 180
 QUOTE_STAKE = 5
 DEST_RE = re.compile(r"^-?[0-9]{4,20}$|^@[A-Za-z][A-Za-z0-9_]{4,31}$")
@@ -128,7 +135,13 @@ def recent_form(rows):
     subset = rows[:RECENT_CLOSED_WINDOW]
     if any(not isinstance(x, dict) for x in subset):
         raise ValueError("Recent closed positions contain malformed entries")
-    pnls = [v2.asfloat(x.get("realizedPnl")) for x in subset]
+    if any(x.get("realizedPnl") is None for x in subset):
+        raise ValueError("Missing recent realized PnL")
+    pnls = [v2.asfloat(x.get("realizedPnl"), float("nan")) for x in subset]
+    if not all(math.isfinite(p) for p in pnls):
+        raise ValueError("Nonfinite recent realized PnL")
+    gains = sum(p for p in pnls if p > 0)
+    losses = -sum(p for p in pnls if p < 0)
     streak = 0
     for pnl in pnls:
         if pnl >= 0:
@@ -136,7 +149,9 @@ def recent_form(rows):
         streak += 1
     return {"closed": len(pnls),
             "positive_rate": sum(p > 0 for p in pnls) / len(pnls) if pnls else 0.,
-            "loss_streak": streak}
+            "loss_streak": streak, "net_pnl": gains - losses,
+            "profit_factor": (gains / losses if losses > 0 else
+                              float("inf") if gains > 0 else 0.)}
 
 
 def recent_form_reason(state, wallet, now):
@@ -144,6 +159,7 @@ def recent_form_reason(state, wallet, now):
     cache = state.setdefault("recent_form_cache", {})
     value = cache.get(wallet)
     if not (isinstance(value, dict) and
+            "profit_factor" in value and "net_pnl" in value and
             0 <= now - int(value.get("checked_at") or 0) <= RECENT_CACHE_SECONDS):
         rows = v2.request_json("/closed-positions", {
             "user": wallet, "limit": RECENT_CLOSED_WINDOW, "offset": 0,
@@ -158,6 +174,8 @@ def recent_form_reason(state, wallet, now):
         return "recent_loss_streak"
     if value["positive_rate"] < RECENT_MIN_POSITIVE_RATE:
         return "recent_positive_rate_low"
+    if value["net_pnl"] <= 0 or value["profit_factor"] < RECENT_MIN_PROFIT_FACTOR:
+        return "recent_negative_expectancy_sample"
     return None
 
 
@@ -221,6 +239,21 @@ def candidate(group, now):
             "outcome": pos["label"]}, None
 
 
+def fast_market_reason(group, now):
+    """Short crypto markets need fresh fills and time for a human to act."""
+    m = FAST_5M_RE.search(group.get("url") or "")
+    if m is None:
+        return None
+    start = int(m.group(1))
+    if start < 1600000000 or start > 2100000000:
+        return "fast_market_bad_timestamp"
+    if now < start - 15 or now > start + 300 - FAST_MARKET_END_BUFFER:
+        return "fast_market_too_late"
+    if now - int(group["last"]) > MAX_FAST_TRADE_AGE:
+        return "fast_trade_stale"
+    return None
+
+
 def check_trade(group, cand):
     if not v32.market_accepts_orders(group["condition"]):
         return None, "market_closed"
@@ -238,8 +271,15 @@ def check_trade(group, cand):
     ask = quote["price"]
     if not MIN_PRICE <= ask <= MAX_PRICE:
         return None, "ask_price_excluded"
+    if cand["source"] - ask > MAX_DROP:
+        return None, "price_fell_sharply"
     if ask - cand["source"] > MAX_RISE or ask / cand["source"] > 1.2:
         return None, "price_moved"
+    # A tradable $5 ask is not sufficient if selling back is expensive.
+    if quote.get("spread") is None or quote["spread"] > MAX_SPREAD:
+        return None, "spread_too_wide"
+    if ask - quote["best_ask"] > MAX_BOOK_SLIPPAGE:
+        return None, "book_slippage"
     return quote, None
 
 
@@ -253,7 +293,8 @@ def message(group, meta, cand, quote, now, recent=None):
     if recent:
         recent_note = (f"\U0001f4c9 Последние {recent['closed']} закрытий: "
                        f"{recent['positive_rate']:.0%} прибыльных; "
-                       f"лузов подряд: {recent['loss_streak']}\n")
+                       f"лузов подряд: {recent['loss_streak']}; "
+                       f"PnL: ${recent['net_pnl']:+,.0f}\n")
     return ("\U0001f9ea <b>v3.3 • новый BUY-трейд</b>\n"
             + "\U0001f464 " + name + "\n"
             + "\U0001f3f7 " + html.escape(group["title"]) + "\n"
@@ -293,6 +334,11 @@ def deliver(state, selected, now):
             continue
         if sent >= MAX_ALERTS:
             mark(state, "alert_cap")
+            continue
+        timing_reason = fast_market_reason(group, now)
+        if timing_reason:
+            mark(state, timing_reason)
+            del state["pending"][key]
             continue
         try:
             quote, reason = check_trade(group, cand)
