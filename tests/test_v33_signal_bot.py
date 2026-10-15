@@ -194,5 +194,105 @@ class BotTests(unittest.TestCase):
         self.assertEqual(state["counters"]["recent_loss_streak"], 1)
 
 
+    def test_recent_history_high_winrate_but_large_losses_is_blocked(self):
+        rows = [{"realizedPnl": 1}] * 14 + [{"realizedPnl": -10}] * 6
+        state = bot.blank_state()
+        with mock.patch.object(bot.v2, "request_json", return_value=rows):
+            result = bot.recent_form_reason(state, W, NOW)
+        self.assertEqual(result, "recent_negative_expectancy_sample")
+        self.assertAlmostEqual(state["recent_form_cache"][W]["net_pnl"], -46)
+
+    def test_recent_history_missing_realized_pnl_is_not_zero(self):
+        with self.assertRaises(ValueError):
+            bot.recent_form([{"wrong_field": "x"}] * 20)
+
+    def test_five_minute_market_must_allow_time_to_act(self):
+        start = 1792056900
+        url = "https://polymarket.com/event/btc-updown-5m-1792056900"
+        group = {"url": url, "last": start + 180}
+        self.assertIsNone(bot.fast_market_reason(group, start + 205))
+        self.assertEqual(bot.fast_market_reason(group, start + 211),
+                         "fast_market_too_late")
+        self.assertEqual(bot.fast_market_reason(group, start + 195 + 20),
+                         "fast_market_too_late")
+
+    def test_five_minute_trade_stale_even_if_market_still_open(self):
+        start = 1792056900
+        group = {"url": "https://polymarket.com/event/btc-updown-5m-1792056900",
+                 "last": start + 30}
+        self.assertEqual(bot.fast_market_reason(group, start + 120),
+                         "fast_trade_stale")
+
+    def test_other_markets_not_given_arbitrary_five_minute_cutoff(self):
+        self.assertIsNone(bot.fast_market_reason(
+            {"url": "https://polymarket.com/event/nba-match",
+             "last": NOW - 200}, NOW))
+
+    def test_sharp_price_drop_blocks_example_btc_signal(self):
+        group = {"wallet": W, "condition": COND}
+        cand = {"token": TOKEN, "source": .78}
+        quote = {"price": .65, "best_ask": .65, "spread": .02,
+                 "one_dollar_meets_min": True}
+        with mock.patch.object(bot.v32, "market_accepts_orders",
+                               return_value=True), \
+             mock.patch.object(bot.v32, "get_positions",
+                               return_value={COND: {TOKEN: 15}}), \
+             mock.patch.object(bot.paper, "book_simulation",
+                               return_value=quote):
+            _, reason = bot.check_trade(group, cand)
+        self.assertEqual(reason, "price_fell_sharply")
+
+    def test_wide_bid_ask_spread_rejected(self):
+        group = {"wallet": W, "condition": COND}
+        cand = {"token": TOKEN, "source": .60}
+        quote = {"price": .61, "best_ask": .61, "spread": .10,
+                 "one_dollar_meets_min": True}
+        with mock.patch.object(bot.v32, "market_accepts_orders",
+                               return_value=True), \
+             mock.patch.object(bot.v32, "get_positions",
+                               return_value={COND: {TOKEN: 15}}), \
+             mock.patch.object(bot.paper, "book_simulation",
+                               return_value=quote):
+            _, reason = bot.check_trade(group, cand)
+        self.assertEqual(reason, "spread_too_wide")
+
+    def test_slippage_rejected_even_if_best_ask_is_good(self):
+        group = {"wallet": W, "condition": COND}
+        cand = {"token": TOKEN, "source": .59}
+        quote = {"price": .62, "best_ask": .58, "spread": .02,
+                 "one_dollar_meets_min": True}
+        with mock.patch.object(bot.v32, "market_accepts_orders",
+                               return_value=True), \
+             mock.patch.object(bot.v32, "get_positions",
+                               return_value={COND: {TOKEN: 15}}), \
+             mock.patch.object(bot.paper, "book_simulation",
+                               return_value=quote):
+            _, reason = bot.check_trade(group, cand)
+        self.assertEqual(reason, "book_slippage")
+
+    def test_narrow_book_and_stable_price_pass_all_book_guards(self):
+        group = {"wallet": W, "condition": COND}
+        cand = {"token": TOKEN, "source": .60}
+        quote = {"price": .61, "best_ask": .60, "spread": .02,
+                 "one_dollar_meets_min": True}
+        with mock.patch.object(bot.v32, "market_accepts_orders",
+                               return_value=True), \
+             mock.patch.object(bot.v32, "get_positions",
+                               return_value={COND: {TOKEN: 15}}), \
+             mock.patch.object(bot.paper, "book_simulation",
+                               return_value=quote):
+            _, reason = bot.check_trade(group, cand)
+        self.assertIsNone(reason)
+
+    def test_book_simulation_calculates_actual_spread(self):
+        book = {"asset_id": TOKEN, "min_order_size": "1",
+                "asks": [{"price": ".61", "size": "20"}],
+                "bids": [{"price": ".59", "size": "20"}]}
+        with mock.patch.object(bot.v2, "request_json", return_value=book):
+            quote = bot.paper.book_simulation(TOKEN, stake=5)
+        self.assertAlmostEqual(quote["spread"], .02)
+        self.assertAlmostEqual(quote["best_bid"], .59)
+
+
 if __name__ == "__main__":
     unittest.main()
