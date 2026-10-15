@@ -22,7 +22,9 @@ permissions:
 
 concurrency:
   group: v33-telegram-separate-writer
-  cancel-in-progress: false
+  # A code deployment replaces the old 50m runner immediately.
+  # Normal scheduled runs do NOT interrupt an active monitoring session.
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   v33-telegram:
@@ -64,6 +66,10 @@ jobs:
           V33_MIN_PRICE: '0.15'
           V33_MAX_PRICE: '0.85'
           V33_MAX_ALERTS: '10'
+          # Recent scoring includes CLOSED + settled unredeemed losses.
+          # Three material ($5+) residual losses in 24h suppress signals.
+          V33_MIN_RECENT_LOSS_USD: '5'
+          V33_MAX_UNREDEEMED_LOSSES_24H: '2'
           # Never notify on political markets (Gamma event tags + title guard).
           V33_EXCLUDE_POLITICS: '1'
           V33_MAX_PRICE_RISE: '0.05'
