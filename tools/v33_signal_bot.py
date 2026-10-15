@@ -317,6 +317,36 @@ def signal_sort_key(item):
             -int(group["last"]))
 
 
+def conflicting_wallet_signal(state, group, cand, now):
+    """Avoid blindly copy-alerting opposing watched wallets in one market.
+
+    Another eligible BUY in the same market on a different token, or a
+    conflicting alert sent in the last 5 minutes, makes direction ambiguous.
+    This does not establish which side is correct.
+    """
+    condition = group["condition"]
+    wallet = group["wallet"]
+    for other in state["pending"].values():
+        if other is group or other["condition"] != condition:
+            continue
+        if other["wallet"] == wallet:
+            continue
+        other_cand, other_reason = candidate(other, now)
+        if other_reason is None and other_cand["token"] != cand["token"]:
+            return True
+    for sent_key, sent_at in state["sent"].items():
+        if now - int(sent_at) > MAX_AGE or int(sent_at) > now + 60:
+            continue
+        parts = sent_key.split("|")
+        if len(parts) != 3:
+            continue
+        old_wallet, old_condition, old_token = parts
+        if (old_wallet != wallet and old_condition == condition and
+                old_token != cand["token"]):
+            return True
+    return False
+
+
 def deliver(state, selected, now):
     sent = 0
     for key, group in sorted(list(state["pending"].items()),
@@ -336,6 +366,10 @@ def deliver(state, selected, now):
             continue
         if sent >= MAX_ALERTS:
             mark(state, "alert_cap")
+            continue
+        if conflicting_wallet_signal(state, group, cand, now):
+            mark(state, "conflicting_wallets")
+            del state["pending"][key]
             continue
         timing_reason = fast_market_reason(group, now)
         if timing_reason:
