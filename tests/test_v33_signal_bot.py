@@ -86,6 +86,7 @@ class BotTests(unittest.TestCase):
         meta = {W: {"name": "Tester", "winrate": .88}}
         with mock.patch.object(bot, "check_trade", return_value=(
                 {"price": .51, "best_ask": .51}, None)), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
              mock.patch.object(bot.v2, "send_telegram") as sender:
             n = bot.deliver(state, meta, NOW)
             self.assertEqual(n, 1)
@@ -136,6 +137,61 @@ class BotTests(unittest.TestCase):
                    "url": "https://polymarket.com/event/nba-finals"})
         with mock.patch.object(bot, "PRIORITY_WALLETS", frozenset([requested])):
             self.assertEqual(sorted([fast, selected], key=bot.signal_sort_key)[0], selected)
+
+
+    def test_seven_recent_losses_are_blocked(self):
+        rows = [{"realizedPnl": -2}] * 7 + [{"realizedPnl": 5}] * 13
+        result = bot.recent_form(rows)
+        self.assertEqual(result["closed"], 20)
+        self.assertEqual(result["loss_streak"], 7)
+        self.assertAlmostEqual(result["positive_rate"], .65)
+        state = bot.blank_state()
+        with mock.patch.object(bot.v2, "request_json", return_value=rows):
+            reason = bot.recent_form_reason(state, W, NOW)
+        self.assertEqual(reason, "recent_loss_streak")
+
+    def test_last_twenty_winrate_floor_blocks_poor_performance(self):
+        rows = [{"realizedPnl": 2}] * 11 + [{"realizedPnl": -1}] * 9
+        with mock.patch.object(bot.v2, "request_json", return_value=rows):
+            self.assertEqual(
+                bot.recent_form_reason(bot.blank_state(), W, NOW),
+                "recent_positive_rate_low")
+
+    def test_good_recent_form_is_cached_three_minutes(self):
+        rows = [{"realizedPnl": 4}] * 18 + [{"realizedPnl": -2}] * 2
+        state = bot.blank_state()
+        with mock.patch.object(bot.v2, "request_json", return_value=rows) as req:
+            self.assertIsNone(bot.recent_form_reason(state, W, NOW))
+            self.assertIsNone(bot.recent_form_reason(state, W, NOW + 150))
+            self.assertIsNone(bot.recent_form_reason(state, W, NOW + 181))
+            self.assertEqual(req.call_count, 2)
+
+    def test_recent_history_api_failure_never_sends(self):
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.5), NOW)
+        with mock.patch.object(bot, "check_trade", return_value=(
+                 {"price": .51, "best_ask": .51}, None)), \
+             mock.patch.object(bot.v2, "request_json",
+                               side_effect=TimeoutError("offline")), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            count = bot.deliver(state, {W: {"name": "Test", "winrate": .88}}, NOW)
+        self.assertEqual(count, 0)
+        sender.assert_not_called()
+        self.assertEqual(state["counters"]["recent_form_request_error"], 1)
+        self.assertEqual(len(state["pending"]), 1)
+
+    def test_recent_seven_losses_stop_alert_even_with_high_old_winrate(self):
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.5), NOW)
+        rows = [{"realizedPnl": -1}] * 7 + [{"realizedPnl": 10}] * 13
+        with mock.patch.object(bot, "check_trade", return_value=(
+                 {"price": .51, "best_ask": .51}, None)), \
+             mock.patch.object(bot.v2, "request_json", return_value=rows), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            count = bot.deliver(state, {W: {"name": "Test", "winrate": .91}}, NOW)
+        self.assertEqual(count, 0)
+        sender.assert_not_called()
+        self.assertEqual(state["counters"]["recent_loss_streak"], 1)
 
 
 if __name__ == "__main__":
