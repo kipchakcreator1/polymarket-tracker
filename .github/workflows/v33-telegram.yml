@@ -69,6 +69,9 @@ jobs:
           V33_MAX_PRICE_DROP: '0.05'
           V33_MAX_SPREAD: '0.05'
           V33_MAX_BOOK_SLIPPAGE: '0.02'
+          # Skip wallets with mostly-red open holdings or a deep ACTIVE drawdown.
+          V33_ACTIVE_MAX_RED_FRACTION: '0.60'
+          V33_ACTIVE_MAX_DRAWDOWN: '0.15'
         run: |
           # Keep one GitHub runner watching for ~50 minutes per schedule
           # event; a delayed cron need not create a 30-40m blind spot.
