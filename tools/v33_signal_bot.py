@@ -150,8 +150,7 @@ def recent_form(rows):
     return {"closed": len(pnls),
             "positive_rate": sum(p > 0 for p in pnls) / len(pnls) if pnls else 0.,
             "loss_streak": streak, "net_pnl": gains - losses,
-            "profit_factor": (gains / losses if losses > 0 else
-                              float("inf") if gains > 0 else 0.)}
+            "profit_factor": gains / losses if losses > 0 else None}
 
 
 def recent_form_reason(state, wallet, now):
@@ -174,7 +173,9 @@ def recent_form_reason(state, wallet, now):
         return "recent_loss_streak"
     if value["positive_rate"] < RECENT_MIN_POSITIVE_RATE:
         return "recent_positive_rate_low"
-    if value["net_pnl"] <= 0 or value["profit_factor"] < RECENT_MIN_PROFIT_FACTOR:
+    if (value["net_pnl"] <= 0 or
+            (value["profit_factor"] is not None and
+             value["profit_factor"] < RECENT_MIN_PROFIT_FACTOR)):
         return "recent_negative_expectancy_sample"
     return None
 
@@ -276,7 +277,8 @@ def check_trade(group, cand):
     if ask - cand["source"] > MAX_RISE or ask / cand["source"] > 1.2:
         return None, "price_moved"
     # A tradable $5 ask is not sufficient if selling back is expensive.
-    if quote.get("spread") is None or quote["spread"] > MAX_SPREAD:
+    if (quote.get("spread") is None or quote["spread"] < 0 or
+            quote["spread"] > MAX_SPREAD):
         return None, "spread_too_wide"
     if ask - quote["best_ask"] > MAX_BOOK_SLIPPAGE:
         return None, "book_slippage"
