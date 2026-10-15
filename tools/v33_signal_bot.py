@@ -53,6 +53,7 @@ MAX_CATCHUP = 7200
 RECENT_CLOSED_WINDOW = 20
 RECENT_PAGE_SIZE = 100
 RECENT_LOST_LOOKBACK_SECONDS = 24 * 3600
+RECENT_MIN_MATERIAL_LOSS_USD = 5.
 RECENT_MAX_UNREDEEMED_LOSSES_24H = 2
 RECENT_MIN_POSITIVE_RATE = .60
 RECENT_MIN_PROFIT_FACTOR = 1.25
@@ -249,6 +250,7 @@ def recent_form(rows, now=None):
         streak += 1
     recent_unredeemed_losses = sum(
         bool(x.get("_unredeemed_lost")) and
+        x.get("realizedPnl", 0.) <= -RECENT_MIN_MATERIAL_LOSS_USD and
         0 <= now - int(x.get("timestamp") or 0) <= RECENT_LOST_LOOKBACK_SECONDS
         for x in rows
     ) if now is not None else 0
@@ -581,7 +583,7 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
                        f"{recent['positive_rate']:.0%} прибыльных; "
                        f"лузов подряд: {recent['loss_streak']}; "
                        f"PnL: ${recent['net_pnl']:+,.0f}; "
-            f"непогашенных лузов за 24ч: "
+            f"непогашенных лузов ≥$5 за 24ч: "
             f"{recent['unredeemed_lost_24h']}\n")
     return ("\U0001f9ea <b>v3.3 • новый BUY-трейд</b>\n"
             + "\U0001f464 " + name + "\n"
