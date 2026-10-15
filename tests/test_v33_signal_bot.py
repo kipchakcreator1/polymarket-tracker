@@ -95,5 +95,48 @@ class BotTests(unittest.TestCase):
         self.assertEqual(n2, 0)
 
 
+    def test_user_priority_keeps_qualified_wallet_with_small_cap(self):
+        requested = "0x" + "c"*40
+        base = {"closed": 100, "profitable_closed_rate": .72,
+                "realized_closed_pnl": 850, "profit_factor": 2.2}
+        data = {"schema": "v33_wallet_shortlist_1", "observed_at": NOW,
+                "shortlist": [dict(base, wallet=W),
+                              dict(base, wallet=requested)]}
+        with mock.patch.object(bot, "MAX_WALLETS", 1), \\
+             mock.patch.object(bot, "PRIORITY_WALLETS", frozenset([requested])):
+            self.assertEqual(list(bot.select_wallets(data, NOW)), [requested])
+
+    def test_user_priority_does_not_bypass_wallet_quality(self):
+        requested = "0x" + "c"*40
+        data = {"schema": "v33_wallet_shortlist_1", "observed_at": NOW,
+                "shortlist": [
+                    {"wallet": requested, "closed": 10,
+                     "profitable_closed_rate": .99,
+                     "realized_closed_pnl": 1000, "profit_factor": 2.0},
+                    {"wallet": W, "closed": 90,
+                     "profitable_closed_rate": .8,
+                     "realized_closed_pnl": 1000, "profit_factor": 2.0}]}
+        with mock.patch.object(bot, "MAX_WALLETS", 1), \\
+             mock.patch.object(bot, "PRIORITY_WALLETS", frozenset([requested])):
+            self.assertEqual(list(bot.select_wallets(data, NOW)), [W])
+
+    def test_5m_crypto_signals_take_priority_under_cap(self):
+        fast = ("fast", {"wallet": W, "last": NOW-25,
+                "url": "https://polymarket.com/event/btc-updown-5m-1792056900"})
+        other = ("other", {"wallet": "0x" + "c"*40, "last": NOW,
+                 "url": "https://polymarket.com/event/nba-finals"})
+        with mock.patch.object(bot, "PRIORITY_WALLETS", frozenset()):
+            self.assertEqual(sorted([other, fast], key=bot.signal_sort_key)[0], fast)
+
+    def test_requested_wallet_prioritized_before_other_fast_crypto(self):
+        requested = "0x" + "c"*40
+        fast = ("fast", {"wallet": W, "last": NOW,
+                "url": "https://polymarket.com/event/btc-updown-5m-1792056900"})
+        selected = ("user", {"wallet": requested, "last": NOW-10,
+                   "url": "https://polymarket.com/event/nba-finals"})
+        with mock.patch.object(bot, "PRIORITY_WALLETS", frozenset([requested])):
+            self.assertEqual(sorted([fast, selected], key=bot.signal_sort_key)[0], selected)
+
+
 if __name__ == "__main__":
     unittest.main()
