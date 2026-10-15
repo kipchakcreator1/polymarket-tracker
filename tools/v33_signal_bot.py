@@ -99,7 +99,8 @@ def select_wallets(shortlist, now):
 def blank_state():
     return {"version": VERSION, "cursors": {}, "seen": {},
             "pending": {}, "sent": {}, "counters": {},
-            "recent_form_cache": {}, "boot_notified": False}
+            "recent_form_cache": {}, "conflicting_markets": {},
+            "boot_notified": False}
 
 
 def load_state():
@@ -113,6 +114,8 @@ def load_state():
             raise ValueError("Corrupted v3.3 state: " + k)
     if not isinstance(value.setdefault("recent_form_cache", {}), dict):
         raise ValueError("Corrupted v3.3 recent form cache")
+    if not isinstance(value.setdefault("conflicting_markets", {}), dict):
+        raise ValueError("Corrupted v3.3 conflict cache")
     return value
 
 
@@ -326,6 +329,9 @@ def conflicting_wallet_signal(state, group, cand, now):
     """
     condition = group["condition"]
     wallet = group["wallet"]
+    conflicts = state.setdefault("conflicting_markets", {})
+    if 0 <= now - int(conflicts.get(condition) or 0) <= MAX_AGE:
+        return True
     for other in state["pending"].values():
         if other is group or other["condition"] != condition:
             continue
@@ -333,6 +339,7 @@ def conflicting_wallet_signal(state, group, cand, now):
             continue
         other_cand, other_reason = candidate(other, now)
         if other_reason is None and other_cand["token"] != cand["token"]:
+            conflicts[condition] = now
             return True
     for sent_key, sent_at in state["sent"].items():
         if now - int(sent_at) > MAX_AGE or int(sent_at) > now + 60:
@@ -343,6 +350,7 @@ def conflicting_wallet_signal(state, group, cand, now):
         old_wallet, old_condition, old_token = parts
         if (old_wallet != wallet and old_condition == condition and
                 old_token != cand["token"]):
+            conflicts[condition] = now
             return True
     return False
 
@@ -468,6 +476,9 @@ def main():
         k: v for k, v in state["recent_form_cache"].items()
         if k in selected and isinstance(v, dict)
         and 0 <= now - int(v.get("checked_at") or 0) <= 3600}
+    state["conflicting_markets"] = {
+        k: v for k, v in state["conflicting_markets"].items()
+        if 0 <= now - int(v) <= MAX_AGE}
     state["last_run"] = {"universe": source.get("candidate_count"),
                          "watching": len(selected), "priority_watching":
                          sum(w in selected for w in PRIORITY_WALLETS),
