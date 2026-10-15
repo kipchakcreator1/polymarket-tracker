@@ -3,9 +3,10 @@ name: Tracker v3.2 Experimental Telegram (separate bot)
 # 3.2 launch schedule only; checkout and all state writes are restricted
 # to the TEST BRANCH. Do not edit or invoke the existing production tracker.yml.
 # The 3.2 workflow validates a distinct BotFather token before sending.
+# v3.2 PAUSED at user request on 2026-10-15: automatic schedule disabled.
+# To resume, restore schedule cron '4-59/5 * * * *'.
+# Manual workflow_dispatch remains available for testing.
 on:
-  schedule:
-    - cron: '4-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
