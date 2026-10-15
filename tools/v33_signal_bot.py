@@ -223,11 +223,12 @@ def fetch_recent_results(wallet, now):
     return sorted(deduped.values(), key=lambda row: -row["timestamp"])
 
 
-def recent_form(rows):
-    """Snapshot of the newest closed positions, ordered by API timestamp DESC.
+def recent_form(rows, now=None):
+    """Recent position PnL, including settled unredeemed losers.
 
-    Positive realized PnL is NOT event forecasting accuracy; zero PnL does not
-    count as profitable, but also does not extend a negative-PnL losing streak.
+    v2 last_event_at is LAST POSITION ACTIVITY, not necessarily market
+    resolution time. The calculated streak is therefore an activity-ordered
+    risk proxy, not an exact replica of the website's results timeline.
     """
     if not isinstance(rows, list):
         raise ValueError("Recent closed positions API returned non-list")
@@ -248,9 +249,9 @@ def recent_form(rows):
         streak += 1
     recent_unredeemed_losses = sum(
         bool(x.get("_unredeemed_lost")) and
-        x.get("timestamp", 0) >= rows[0].get("_now", 0) - RECENT_LOST_LOOKBACK_SECONDS
+        0 <= now - int(x.get("timestamp") or 0) <= RECENT_LOST_LOOKBACK_SECONDS
         for x in rows
-    ) if rows and rows[0].get("_now") else 0
+    ) if now is not None else 0
     return {"closed": len(pnls),
             "positive_rate": sum(p > 0 for p in pnls) / len(pnls) if pnls else 0.,
             "loss_streak": streak, "net_pnl": gains - losses,
@@ -267,10 +268,7 @@ def recent_form_reason(state, wallet, now):
             "unredeemed_lost_24h" in value and
             0 <= now - int(value.get("checked_at") or 0) <= RECENT_CACHE_SECONDS):
         rows = fetch_recent_results(wallet, now)
-        # This timestamp is used solely for the recent 24h loss veto.
-        for row in rows:
-            row["_now"] = now
-        value = recent_form(rows)
+        value = recent_form(rows, now)
         value["checked_at"] = now
         cache[wallet] = value
     if value["unredeemed_lost_24h"] > RECENT_MAX_UNREDEEMED_LOSSES_24H:
@@ -579,7 +577,7 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
             f"красных {active['red_count']}; "
             f"нереализованный PnL {active['unrealized_pnl']:+,.0f}$\n")
     if recent:
-        recent_note = (f"\U0001f4c9 Последние {recent['closed']} закрытий: "
+        recent_note = (f"\U0001f4c9 Последние {recent['closed']} учтённых позиций: "
                        f"{recent['positive_rate']:.0%} прибыльных; "
                        f"лузов подряд: {recent['loss_streak']}; "
                        f"PnL: ${recent['net_pnl']:+,.0f}; "
