@@ -743,11 +743,11 @@ def send_quiet_status(state, now, fresh_fills, watching):
         return False
     minutes = max(0, (now - last_signal) // 60)
     v2.send_telegram(
-        "\\U0001f6f0 <b>v3.3 • мониторинг работает</b>\\n"
-        f"\\U0001f50e Проверяем {watching} кошельков.\\n"
-        f"\\U0001f9ea Новых трейдов в последней проверке: {fresh_fills}.\\n"
-        f"\\U0001f4e8 Последний подтверждённый BUY-сигнал: {minutes} мин назад.\\n"
-        "\\u26a0\\ufe0f Подходящих по фильтрам трейдов пока нет. "
+        "\U0001f6f0 <b>v3.3 • мониторинг работает</b>\n"
+        f"\U0001f50e Проверяем {watching} кошельков.\n"
+        f"\U0001f9ea Новых трейдов в последней проверке: {fresh_fills}.\n"
+        f"\U0001f4e8 Последний подтверждённый BUY-сигнал: {minutes} мин назад.\n"
+        "\u26a0\ufe0f Подходящих по фильтрам трейдов пока нет. "
         "Это статус, не сигнал к трейду.")
     state["last_quiet_status_at"] = now
     mark(state, "quiet_status_sent")
