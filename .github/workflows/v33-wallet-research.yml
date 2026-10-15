@@ -1,0 +1,76 @@
+name: v3.3 Wide Wallet Research (NO TELEGRAM)
+
+# Independent universe builder. The old v3.1 and v3.2 workflows and
+# state files remain untouched. Research-only, never executes orders.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v33-wallet-research.yml'
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v33-wide-wallet-research-isolated
+  cancel-in-progress: false
+
+jobs:
+  discover-and-score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    steps:
+      - name: Check out isolated research branch (not main or v3.2)
+        uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify v3.3 offline tests
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_wallet_universe.py
+          python -m unittest discover -s tests -p 'test_v33_wallet_universe.py' -v
+
+      - name: Collect and score public wallets WITHOUT Telegram or orders
+        env:
+          PYTHONPATH: .
+          V33_TARGET_WALLETS: '10000'
+          V33_MARKETS_PER_RUN: '180'
+          V33_GAMMA_PAGES: '12'
+          V33_SCORE_BATCH: '100'
+          SAMPLE_CLOSED: '100'
+        run: |
+          python -u tools/v33_wallet_universe.py
+
+      - name: Upload v3.3 research snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v33-public-wallet-research
+          path: |
+            research/v33_wallet_universe.json
+            research/v33_wallet_shortlist.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Persist ONLY research data to research branch
+        if: success()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/v33_wallet_universe.json research/v33_wallet_shortlist.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'research(v3.3): grow public wallet universe [skip ci]'
+            git pull --rebase origin v3.3-wallet-research
+            git push origin HEAD:v3.3-wallet-research
+          fi
