@@ -102,7 +102,7 @@ class BotTests(unittest.TestCase):
         data = {"schema": "v33_wallet_shortlist_1", "observed_at": NOW,
                 "shortlist": [dict(base, wallet=W),
                               dict(base, wallet=requested)]}
-        with mock.patch.object(bot, "MAX_WALLETS", 1), \\
+        with mock.patch.object(bot, "MAX_WALLETS", 1), \
              mock.patch.object(bot, "PRIORITY_WALLETS", frozenset([requested])):
             self.assertEqual(list(bot.select_wallets(data, NOW)), [requested])
 
@@ -116,7 +116,7 @@ class BotTests(unittest.TestCase):
                     {"wallet": W, "closed": 90,
                      "profitable_closed_rate": .8,
                      "realized_closed_pnl": 1000, "profit_factor": 2.0}]}
-        with mock.patch.object(bot, "MAX_WALLETS", 1), \\
+        with mock.patch.object(bot, "MAX_WALLETS", 1), \
              mock.patch.object(bot, "PRIORITY_WALLETS", frozenset([requested])):
             self.assertEqual(list(bot.select_wallets(data, NOW)), [W])
 
