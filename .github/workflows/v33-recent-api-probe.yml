@@ -44,9 +44,15 @@ jobs:
                   print("SCHEMA_ERROR",status,type(exc).__name__,str(exc)[:120])
           try:
               rows=fetch_recent_results(wallet,now)
-              for row in rows: row["_now"]=now
-              summary=recent_form(rows)
+              summary=recent_form(rows,now)
+              losses=[r["realizedPnl"] for r in rows
+                      if r.get("_unredeemed_lost") and 0<=now-r["timestamp"]<=86400]
               print("COMBINED_FORM",json.dumps(summary,sort_keys=True))
+              print("UNREDEEMED_LOSS_COUNTS",
+                    "observed_24h",len(losses),
+                    "losses_over_5_usd",sum(x<=-5 for x in losses),
+                    "losses_over_20_usd",sum(x<=-20 for x in losses),
+                    "aggregate_loss_24h",round(sum(losses),2))
           except Exception as exc:
               print("COMBINED_ERROR",type(exc).__name__,str(exc)[:160])
           PY
