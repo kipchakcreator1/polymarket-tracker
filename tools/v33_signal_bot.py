@@ -385,7 +385,7 @@ def political_labels(obj):
     """Classify event/market category, tags and public market text."""
     if not isinstance(obj, dict):
         return False
-    for field in ("category", "subcategory", "question", "title", "slug"):
+    for field in ("category", "subcategory", "label", "question", "title", "slug"):
         if POLITICS_RE.search(str(obj.get(field) or "").replace("-", " ")):
             return True
     for field in ("tags", "categories"):
