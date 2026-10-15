@@ -51,6 +51,9 @@ MAX_CATCHUP = 7200
 # Re-evaluate recent closed-position results at alert time, not only at
 # the wallet-discovery refresh (which can be seven days old).
 RECENT_CLOSED_WINDOW = 20
+RECENT_PAGE_SIZE = 100
+RECENT_LOST_LOOKBACK_SECONDS = 24 * 3600
+RECENT_MAX_UNREDEEMED_LOSSES_24H = 2
 RECENT_MIN_POSITIVE_RATE = .60
 RECENT_MIN_PROFIT_FACTOR = 1.25
 RECENT_MAX_LOSS_STREAK = 3
@@ -151,6 +154,75 @@ def save_state(state):
     temp.replace(STATE)
 
 
+def fetch_recent_results(wallet, now):
+    """Read v2 CLOSED history AND settled-but-unredeemed losses.
+
+    The legacy /closed-positions route omits some resolved losing holdings.
+    v2 REDEEMABLE_LOST explicitly includes those losses; its last_event_at
+    denotes LAST POSITION ACTIVITY, not necessarily market resolution time.
+    We do not represent this as the Polymarket UI's exact chronological streak.
+    """
+    data = []
+    for status in ("CLOSED", "REDEEMABLE_LOST"):
+        response = v2.request_json("/v2/positions", {
+            "user": wallet, "status": status,
+            "sort_by": "TIMESTAMP", "sort_direction": "DESC",
+            "limit": RECENT_PAGE_SIZE,
+        }, tries=2, timeout=12)
+        if not isinstance(response, dict) or not isinstance(response.get("data"), list):
+            raise ValueError("Incomplete v2 recent positions response")
+        if not isinstance(response.get("pagination"), dict):
+            raise ValueError("Unknown v2 recent positions pagination")
+        page = response["data"]
+        if any(not isinstance(item, dict) for item in page):
+            raise ValueError("Malformed v2 recent position")
+        # Latest 100 per status are more than enough for last-20 sampling.
+        # A full first page in timestamp order is sufficient for top 20.
+        for item in page:
+            if str(item.get("proxy_wallet") or "").lower() != wallet:
+                raise ValueError("Position wallet identity mismatch")
+            condition = str(item.get("condition_id") or "").lower()
+            token = str(item.get("token_id") or "")
+            if not v32.discovery.CONDITION_RE.fullmatch(condition) or not token:
+                raise ValueError("Position lacks condition or outcome identity")
+            timestamp = v2.asfloat(item.get("last_event_at"), float("nan"))
+            if not math.isfinite(timestamp) or timestamp <= 0 or timestamp > now + 60:
+                raise ValueError("Position activity timestamp invalid")
+            if status == "CLOSED":
+                if item.get("status") != "CLOSED":
+                    raise ValueError("Expected closed position")
+                pnl = v2.asfloat(item.get("realized_pnl"), float("nan"))
+            else:
+                # v2 emits REDEEMABLE row status for REDEEMABLE_LOST query.
+                if item.get("status") != "REDEEMABLE":
+                    raise ValueError("Expected settled-but-unredeemed loss")
+                if item.get("redeemable") is not True:
+                    raise ValueError("Cannot verify resolved losing position")
+                # Unrealized PnL on lost unredeemed holdings is the loss,
+                # not a successful closed trade; include realized exits too.
+                realized = v2.asfloat(item.get("realized_pnl"), float("nan"))
+                unrealized = v2.asfloat(item.get("unrealized_pnl"), float("nan"))
+                pnl = realized + unrealized
+                if pnl >= -0.01:
+                    raise ValueError("REDEEMABLE_LOST returned non-losing position")
+            if not math.isfinite(pnl):
+                raise ValueError("Missing/nonfinite recent position PnL")
+            data.append({
+                "realizedPnl": pnl, "timestamp": int(timestamp),
+                "condition_id": condition, "token_id": token,
+                "_unredeemed_lost": status == "REDEEMABLE_LOST",
+            })
+    # Never count one position twice. Preserve the worst available result
+    # if an inconsistent API snapshot claims both CLOSED and REDEEMABLE.
+    deduped = {}
+    for item in data:
+        key = (item["condition_id"], item["token_id"])
+        old = deduped.get(key)
+        if old is None or item["realizedPnl"] < old["realizedPnl"]:
+            deduped[key] = item
+    return sorted(deduped.values(), key=lambda row: -row["timestamp"])
+
+
 def recent_form(rows):
     """Snapshot of the newest closed positions, ordered by API timestamp DESC.
 
@@ -174,10 +246,16 @@ def recent_form(rows):
         if pnl >= 0:
             break
         streak += 1
+    recent_unredeemed_losses = sum(
+        bool(x.get("_unredeemed_lost")) and
+        x.get("timestamp", 0) >= rows[0].get("_now", 0) - RECENT_LOST_LOOKBACK_SECONDS
+        for x in rows
+    ) if rows and rows[0].get("_now") else 0
     return {"closed": len(pnls),
             "positive_rate": sum(p > 0 for p in pnls) / len(pnls) if pnls else 0.,
             "loss_streak": streak, "net_pnl": gains - losses,
-            "profit_factor": gains / losses if losses > 0 else None}
+            "profit_factor": gains / losses if losses > 0 else None,
+            "unredeemed_lost_24h": recent_unredeemed_losses}
 
 
 def recent_form_reason(state, wallet, now):
@@ -186,14 +264,17 @@ def recent_form_reason(state, wallet, now):
     value = cache.get(wallet)
     if not (isinstance(value, dict) and
             "profit_factor" in value and "net_pnl" in value and
+            "unredeemed_lost_24h" in value and
             0 <= now - int(value.get("checked_at") or 0) <= RECENT_CACHE_SECONDS):
-        rows = v2.request_json("/closed-positions", {
-            "user": wallet, "limit": RECENT_CLOSED_WINDOW, "offset": 0,
-            "sortBy": "TIMESTAMP", "sortDirection": "DESC",
-        }, tries=2, timeout=12)
+        rows = fetch_recent_results(wallet, now)
+        # This timestamp is used solely for the recent 24h loss veto.
+        for row in rows:
+            row["_now"] = now
         value = recent_form(rows)
         value["checked_at"] = now
         cache[wallet] = value
+    if value["unredeemed_lost_24h"] > RECENT_MAX_UNREDEEMED_LOSSES_24H:
+        return "recent_unredeemed_loss_cluster"
     if value["closed"] < RECENT_CLOSED_WINDOW:
         return "recent_sample_too_small"
     if value["loss_streak"] > RECENT_MAX_LOSS_STREAK:
@@ -501,7 +582,9 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
         recent_note = (f"\U0001f4c9 Последние {recent['closed']} закрытий: "
                        f"{recent['positive_rate']:.0%} прибыльных; "
                        f"лузов подряд: {recent['loss_streak']}; "
-                       f"PnL: ${recent['net_pnl']:+,.0f}\n")
+                       f"PnL: ${recent['net_pnl']:+,.0f}; "
+            f"непогашенных лузов за 24ч: "
+            f"{recent['unredeemed_lost_24h']}\n")
     return ("\U0001f9ea <b>v3.3 • новый BUY-трейд</b>\n"
             + "\U0001f464 " + name + "\n"
             + "\U0001f3f7 " + html.escape(group["title"]) + "\n"
