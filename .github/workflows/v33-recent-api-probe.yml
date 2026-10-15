@@ -1,0 +1,52 @@
+name: v3.3 Recent API Live Schema Probe (NO TELEGRAM)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-recent-api-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  schema-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify public v2 CLOSED and REDEEMABLE_LOST status semantics
+        env:
+          PYTHONPATH: .
+        run: |
+          python -u - <<'PY'
+          import json
+          import time
+          import smart_tracker_v2 as v2
+          from tools.v33_signal_bot import fetch_recent_results, recent_form
+          wallet="0x5b6331e7ff0831a3fe2ed12004747db1a9c911a4"
+          now=int(time.time())
+          for status in ("CLOSED","REDEEMABLE_LOST"):
+              try:
+                  data=v2.request_json("/v2/positions",{
+                      "user":wallet,"status":status,"sort_by":"TIMESTAMP",
+                      "sort_direction":"DESC","limit":10},tries=2,timeout=12)
+                  rows=data.get("data") if isinstance(data,dict) else None
+                  print("SCHEMA",status,"rows",len(rows) if isinstance(rows,list) else "malformed",
+                        "pagination",list(data.get("pagination",{})) if isinstance(data,dict) else "?",
+                        "row_keys",sorted(rows[0]) if rows else [])
+                  for row in (rows or [])[:2]:
+                      print("SAMPLE",status,{k:row.get(k) for k in
+                          ("status","redeemable","realized_pnl","unrealized_pnl","last_event_at")})
+              except Exception as exc:
+                  print("SCHEMA_ERROR",status,type(exc).__name__,str(exc)[:120])
+          try:
+              rows=fetch_recent_results(wallet,now)
+              for row in rows: row["_now"]=now
+              summary=recent_form(rows)
+              print("COMBINED_FORM",json.dumps(summary,sort_keys=True))
+          except Exception as exc:
+              print("COMBINED_ERROR",type(exc).__name__,str(exc)[:160])
+          PY
