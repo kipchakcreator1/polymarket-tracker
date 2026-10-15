@@ -294,5 +294,45 @@ class BotTests(unittest.TestCase):
         self.assertAlmostEqual(quote["best_bid"], .59)
 
 
+    def test_opposite_traders_on_same_market_block_both_signals(self):
+        other_wallet = "0x" + "c" * 40
+        first = trade(price=.6)
+        second = dict(trade(price=.6, outcome="No"),
+                      proxy_wallet=other_wallet, token_id="5678",
+                      transaction_hash="opposite-hash")
+        state = bot.blank_state()
+        self.assertTrue(bot.add_fill(state, first, NOW))
+        self.assertTrue(bot.add_fill(state, second, NOW))
+        selected = {W: {"name": "A", "winrate": .81},
+                    other_wallet: {"name": "B", "winrate": .83}}
+        with mock.patch.object(bot, "check_trade",
+                               return_value=({"price": .61}, None)), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            count = bot.deliver(state, selected, NOW)
+        self.assertEqual(count, 0)
+        sender.assert_not_called()
+        self.assertEqual(state["counters"]["conflicting_wallets"], 2)
+        self.assertFalse(state["pending"])
+
+    def test_recent_opposing_telegram_alert_blocks_next_opposite(self):
+        other_wallet = "0x" + "c" * 40
+        state = bot.blank_state()
+        state["sent"][other_wallet + "|" + COND + "|5678"] = NOW - 30
+        state["pending"]["new"] = {"wallet": W, "condition": COND,
+                                   "last": NOW, "outcomes": {}}
+        self.assertTrue(bot.conflicting_wallet_signal(
+            state, {"wallet": W, "condition": COND},
+            {"token": TOKEN}, NOW))
+        self.assertEqual(state["conflicting_markets"][COND], NOW)
+
+    def test_old_opposite_signal_does_not_block_forever(self):
+        other_wallet = "0x" + "c" * 40
+        state = bot.blank_state()
+        state["sent"][other_wallet + "|" + COND + "|5678"] = NOW - 1000
+        self.assertFalse(bot.conflicting_wallet_signal(
+            state, {"wallet": W, "condition": COND},
+            {"token": TOKEN}, NOW))
+
+
 if __name__ == "__main__":
     unittest.main()
