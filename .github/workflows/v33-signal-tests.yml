@@ -2,7 +2,7 @@ name: v3.3 Signal Offline Tests (NO TELEGRAM)
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/v33-signal-tests.yml']
+    paths: ['.github/workflows/v33-signal-tests.yml', '.github/workflows/v33-telegram.yml']
   workflow_dispatch:
 permissions:
   contents: read
