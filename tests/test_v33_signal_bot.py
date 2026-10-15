@@ -631,5 +631,15 @@ class BotTests(unittest.TestCase):
         self.assertEqual(state["recent_form_cache"][W]["unredeemed_lost_24h"], 0)
 
 
+    def test_material_loss_gate_does_not_count_dust(self):
+        rows = [{"realizedPnl": 2., "timestamp": NOW-i} for i in range(20)]
+        rows += [{"realizedPnl": -.01, "timestamp": NOW-50-i,
+                  "_unredeemed_lost": True} for i in range(7)]
+        self.assertEqual(bot.recent_form(rows, NOW)["unredeemed_lost_24h"], 0)
+        rows.append({"realizedPnl": -6., "timestamp": NOW-70,
+                     "_unredeemed_lost": True})
+        self.assertEqual(bot.recent_form(rows, NOW)["unredeemed_lost_24h"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
