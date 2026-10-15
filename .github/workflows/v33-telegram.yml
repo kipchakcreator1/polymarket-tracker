@@ -29,7 +29,7 @@ jobs:
     # Do not react to failed workflows or runs from unexpected branches.
     if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 65
     steps:
       - name: Check out isolated v3.3 research branch only
         uses: actions/checkout@v4
@@ -63,17 +63,39 @@ jobs:
           V33_MAX_ALERTS: '6'
           V33_MAX_PRICE_RISE: '0.05'
         run: |
-          # 3 reads per launch; each read persists local dedupe/cursors before
-          # the next one. Old trades remain research-only, never sent as fresh.
-          # Three polls cover ~3 minutes even if GitHub cron runs late.
+          # Keep one GitHub runner watching for ~50 minutes per schedule
+          # event; a delayed cron need not create a 30-40m blind spot.
+          # Persist cursors/dedupe every three polls, not only at job end.
           set -euo pipefail
-          for pass in 1 2 3; do
-            echo "V33 POLL PASS ${pass}/3 at $(date -u +%FT%TZ)"
-            python -u tools/v33_signal_bot.py
-            if [ "${pass}" != 3 ]; then
-              sleep 90
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          START=$SECONDS
+          pass=0
+          errors=0
+          while (( SECONDS - START < 3000 )); do
+            pass=$((pass + 1))
+            echo "V33 CONTINUOUS POLL #${pass} at $(date -u +%FT%TZ)"
+            if python -u tools/v33_signal_bot.py; then
+              :
+            else
+              errors=$((errors + 1))
+              echo "V33 POLL FAILURE #${errors}; will retry on next pass"
             fi
+            if (( pass % 3 == 0 )); then
+              git add research/v33_signal_state.json
+              if ! git diff --cached --quiet; then
+                git commit -m 'chore(v3.3): checkpoint Telegram cursors [skip ci]'
+                git pull --rebase origin v3.3-wallet-research
+                git push origin HEAD:v3.3-wallet-research
+              fi
+            fi
+            sleep 90
           done
+          echo "V33 SESSION SUMMARY passes=${pass} errors=${errors}"
+          if (( errors == pass )); then
+            echo "V33 FAILURE: no successful checks during this session"
+            exit 1
+          fi
 
       - name: Persist ONLY v3.3 signal state on research branch
         if: success()
