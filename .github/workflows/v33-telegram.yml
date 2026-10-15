@@ -64,6 +64,8 @@ jobs:
           V33_MIN_PRICE: '0.15'
           V33_MAX_PRICE: '0.85'
           V33_MAX_ALERTS: '10'
+          # Never notify on political markets (Gamma event tags + title guard).
+          V33_EXCLUDE_POLITICS: '1'
           V33_MAX_PRICE_RISE: '0.05'
           # Defensive risk limits; copied quotes are research-only.
           V33_MAX_PRICE_DROP: '0.05'
