@@ -658,5 +658,26 @@ class BotTests(unittest.TestCase):
 
 
 
+    def test_quiet_status_sends_only_one_truthful_update_per_hour(self):
+        state = bot.blank_state()
+        state["sent"][W + "|" + COND + "|" + TOKEN] = NOW-7200
+        with mock.patch.object(bot.v2, "send_telegram") as send:
+            self.assertTrue(bot.send_quiet_status(state, NOW, 23, 250))
+            self.assertFalse(bot.send_quiet_status(state, NOW+120, 22, 250))
+            self.assertTrue(bot.send_quiet_status(state, NOW+3601, 10, 250))
+        self.assertEqual(send.call_count, 2)
+        self.assertIn("Это статус, не сигнал к трейду.", send.call_args.args[0])
+        self.assertEqual(state["counters"]["quiet_status_sent"], 2)
+        self.assertNotIn("alerts_sent", state["counters"])
+
+    def test_quiet_status_silent_when_recent_verified_trade(self):
+        state = bot.blank_state()
+        state["sent"][W + "|" + COND + "|" + TOKEN] = NOW-300
+        with mock.patch.object(bot.v2, "send_telegram") as send:
+            self.assertFalse(bot.send_quiet_status(state, NOW, 0, 250))
+        send.assert_not_called()
+
+
+
 if __name__ == "__main__":
     unittest.main()
