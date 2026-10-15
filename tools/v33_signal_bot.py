@@ -33,6 +33,12 @@ PRIORITY_WALLETS = frozenset(w.strip().lower() for w in
 FAST_5M_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-5m-\d+\b", re.I)
 MAX_AGE = 300
 MAX_CATCHUP = 7200
+# Re-evaluate recent closed-position results at alert time, not only at
+# the wallet-discovery refresh (which can be seven days old).
+RECENT_CLOSED_WINDOW = 20
+RECENT_MIN_POSITIVE_RATE = .60
+RECENT_MAX_LOSS_STREAK = 3
+RECENT_CACHE_SECONDS = 180
 QUOTE_STAKE = 5
 DEST_RE = re.compile(r"^-?[0-9]{4,20}$|^@[A-Za-z][A-Za-z0-9_]{4,31}$")
 
@@ -85,7 +91,8 @@ def select_wallets(shortlist, now):
 
 def blank_state():
     return {"version": VERSION, "cursors": {}, "seen": {},
-            "pending": {}, "sent": {}, "counters": {}, "boot_notified": False}
+            "pending": {}, "sent": {}, "counters": {},
+            "recent_form_cache": {}, "boot_notified": False}
 
 
 def load_state():
@@ -97,6 +104,8 @@ def load_state():
     for k in ("cursors", "seen", "pending", "sent", "counters"):
         if not isinstance(value.get(k), dict):
             raise ValueError("Corrupted v3.3 state: " + k)
+    if not isinstance(value.setdefault("recent_form_cache", {}), dict):
+        raise ValueError("Corrupted v3.3 recent form cache")
     return value
 
 
@@ -106,6 +115,50 @@ def save_state(state):
     temp.write_text(json.dumps(state, ensure_ascii=False,
                                separators=(",", ":")) + "\n", encoding="utf-8")
     temp.replace(STATE)
+
+
+def recent_form(rows):
+    """Snapshot of the newest closed positions, ordered by API timestamp DESC.
+
+    Positive realized PnL is NOT event forecasting accuracy; zero PnL does not
+    count as profitable, but also does not extend a negative-PnL losing streak.
+    """
+    if not isinstance(rows, list):
+        raise ValueError("Recent closed positions API returned non-list")
+    subset = rows[:RECENT_CLOSED_WINDOW]
+    if any(not isinstance(x, dict) for x in subset):
+        raise ValueError("Recent closed positions contain malformed entries")
+    pnls = [v2.asfloat(x.get("realizedPnl")) for x in subset]
+    streak = 0
+    for pnl in pnls:
+        if pnl >= 0:
+            break
+        streak += 1
+    return {"closed": len(pnls),
+            "positive_rate": sum(p > 0 for p in pnls) / len(pnls) if pnls else 0.,
+            "loss_streak": streak}
+
+
+def recent_form_reason(state, wallet, now):
+    """Fail closed on poor or unknown recent performance; cache briefly."""
+    cache = state.setdefault("recent_form_cache", {})
+    value = cache.get(wallet)
+    if not (isinstance(value, dict) and
+            0 <= now - int(value.get("checked_at") or 0) <= RECENT_CACHE_SECONDS):
+        rows = v2.request_json("/closed-positions", {
+            "user": wallet, "limit": RECENT_CLOSED_WINDOW, "offset": 0,
+            "sortBy": "TIMESTAMP", "sortDirection": "DESC",
+        }, tries=2, timeout=12)
+        value = recent_form(rows)
+        value["checked_at"] = now
+        cache[wallet] = value
+    if value["closed"] < RECENT_CLOSED_WINDOW:
+        return "recent_sample_too_small"
+    if value["loss_streak"] > RECENT_MAX_LOSS_STREAK:
+        return "recent_loss_streak"
+    if value["positive_rate"] < RECENT_MIN_POSITIVE_RATE:
+        return "recent_positive_rate_low"
+    return None
 
 
 def mark(state, reason):
@@ -190,12 +243,17 @@ def check_trade(group, cand):
     return quote, None
 
 
-def message(group, meta, cand, quote, now):
+def message(group, meta, cand, quote, now, recent=None):
     name = html.escape(meta["name"] or group["wallet"][:12])
     url = html.escape(group.get("url") or "", quote=True)
     link = f'<a href="https://polymarket.com/profile/{group["wallet"]}">Кошелёк</a>'
     if url:
         link = f'<a href="{url}">Рынок</a> | ' + link
+    recent_note = ""
+    if recent:
+        recent_note = (f"\U0001f4c9 Последние {recent['closed']} закрытий: "
+                       f"{recent['positive_rate']:.0%} прибыльных; "
+                       f"лузов подряд: {recent['loss_streak']}\n")
     return ("\U0001f9ea <b>v3.3 • новый BUY-трейд</b>\n"
             + "\U0001f464 " + name + "\n"
             + "\U0001f3f7 " + html.escape(group["title"]) + "\n"
@@ -204,7 +262,7 @@ def message(group, meta, cand, quote, now):
             + f"\U0001f4ca Ask: ~{quote['price']:.3f} для гипотетических "
               f"\u0024{QUOTE_STAKE:g}; задержка {(now-group['last'])//60} мин\n"
             + f"\U0001f4c8 Прибыльные закрытые позиции: {meta['winrate']:.0%} "
-              "(не точность прогнозов)\n" + link + "\n"
+              "(не точность прогнозов)\n" + recent_note + link + "\n"
             + "\u26a0\ufe0f Исследовательский сигнал, не гарантия прибыли.")
 
 
@@ -248,8 +306,19 @@ def deliver(state, selected, now):
             del state["pending"][key]
             continue
         try:
+            recent_reason = recent_form_reason(state, group["wallet"], now)
+        except Exception as exc:
+            mark(state, "recent_form_request_error")
+            print("V33 RECENT FORM WARNING:", type(exc).__name__, str(exc)[:100])
+            continue  # retry while trade is fresh; never send unchecked
+        if recent_reason:
+            mark(state, recent_reason)
+            del state["pending"][key]
+            continue
+        try:
+            recent = state.get("recent_form_cache", {}).get(group["wallet"])
             v2.send_telegram(message(group, selected[group["wallet"]],
-                                     cand, quote, now))
+                                     cand, quote, now, recent=recent))
         except Exception as exc:
             mark(state, "telegram_error")
             print("V33 TELEGRAM WARNING:", type(exc).__name__, str(exc)[:100])
@@ -313,6 +382,10 @@ def main():
                         if now - int(v["last"]) <= MAX_AGE}
     state["cursors"] = {k: v for k, v in state["cursors"].items()
                         if k in selected}
+    state["recent_form_cache"] = {
+        k: v for k, v in state["recent_form_cache"].items()
+        if k in selected and isinstance(v, dict)
+        and 0 <= now - int(v.get("checked_at") or 0) <= 3600}
     state["last_run"] = {"universe": source.get("candidate_count"),
                          "watching": len(selected), "priority_watching":
                          sum(w in selected for w in PRIORITY_WALLETS),
