@@ -86,6 +86,14 @@ def book_simulation(token,stake=STAKE):
         if 0<price<1 and qty>0: asks.append((price,qty))
     asks.sort(key=lambda x:x[0])
     if not asks: return None
+    bids=[]
+    for level in book.get('bids', []):
+        try: price=float(level['price']);qty=float(level['size'])
+        except (TypeError,ValueError,KeyError): continue
+        if 0<price<1 and qty>0: bids.append(price)
+    best_bid=max(bids) if bids else None
+    # Unknown bid side => spread cannot be verified, so v3.3 will skip.
+    spread=(asks[0][0]-best_bid) if best_bid is not None else None
     remaining=stake;shares=0.
     for price,available in asks:
         take=min(available,remaining/price)
@@ -96,7 +104,8 @@ def book_simulation(token,stake=STAKE):
     ask=asks[0][0]
     min_order=v2.asfloat(book.get('min_order_size'),0)
     return {'price':round(stake/shares,8),'shares':round(shares,8),
-            'best_ask':ask,'min_order_shares':min_order,
+            'best_ask':ask,'best_bid':best_bid,'spread':spread,
+            'min_order_shares':min_order,
             'one_dollar_meets_min':bool(shares+1e-8>=min_order) if min_order>0 else None}
 
 
