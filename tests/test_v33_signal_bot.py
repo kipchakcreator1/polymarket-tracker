@@ -365,11 +365,11 @@ class BotTests(unittest.TestCase):
 
     def test_active_positive_portfolio_remains_eligible(self):
         good = [
-            {"status": "OPEN", "current_size": 100, "entry_cost_usdc": 100,
+            {"status": "OPEN", "redeemable": False, "current_size": 100, "entry_cost_usdc": 100,
              "unrealized_pnl": 12},
-            {"status": "OPEN", "current_size": 100, "entry_cost_usdc": 100,
+            {"status": "OPEN", "redeemable": False, "current_size": 100, "entry_cost_usdc": 100,
              "unrealized_pnl": 8},
-            {"status": "OPEN", "current_size": 100, "entry_cost_usdc": 100,
+            {"status": "OPEN", "redeemable": False, "current_size": 100, "entry_cost_usdc": 100,
              "unrealized_pnl": -2}]
         with mock.patch.object(bot, "fetch_open_positions", return_value=good):
             self.assertIsNone(bot.active_form_reason(bot.blank_state(), W, NOW))
@@ -387,8 +387,14 @@ class BotTests(unittest.TestCase):
         self.assertEqual(form["red_count"], 0)
 
     def test_active_missing_pnl_is_unverified_not_zero(self):
-        rows = [{"status": "OPEN", "current_size": 100,
+        rows = [{"status": "OPEN", "redeemable": False, "current_size": 100,
                  "entry_cost_usdc": 100}]
+        with self.assertRaises(ValueError):
+            bot.active_form(rows)
+
+    def test_active_missing_status_metadata_fails_closed(self):
+        rows = [{"status": "OPEN", "current_size": 100,
+                 "entry_cost_usdc": 100, "unrealized_pnl": -50}]
         with self.assertRaises(ValueError):
             bot.active_form(rows)
 
@@ -427,7 +433,7 @@ class BotTests(unittest.TestCase):
         self.assertEqual(len(state["pending"]), 1)
 
     def test_active_cache_is_short_and_keeps_api_load_bounded(self):
-        positive = [{"status": "OPEN", "current_size": 100,
+        positive = [{"status": "OPEN", "redeemable": False, "current_size": 100,
                      "entry_cost_usdc": 100, "unrealized_pnl": 20}]
         state = bot.blank_state()
         with mock.patch.object(bot, "fetch_open_positions",
