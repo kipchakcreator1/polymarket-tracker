@@ -804,8 +804,10 @@ def main():
         except Exception as exc:
             mark(state, "quiet_status_error")
             print("V33 STATUS WARNING:", type(exc).__name__, str(exc)[:100])
+    # Every API catch-up is at most 2h old, so 3h of fill IDs is enough
+    # to stop duplicates without growing multi-megabyte state files.
     state["seen"] = {k: v for k, v in state["seen"].items()
-                     if v >= now - 2 * 86400}
+                     if v >= now - 3 * 3600}
     state["sent"] = {k: v for k, v in state["sent"].items()
                      if v >= now - 7 * 86400}
     state["pending"] = {k: v for k, v in state["pending"].items()
