@@ -65,6 +65,10 @@ jobs:
           V33_MAX_PRICE: '0.85'
           V33_MAX_ALERTS: '10'
           V33_MAX_PRICE_RISE: '0.05'
+          # Defensive risk limits; copied quotes are research-only.
+          V33_MAX_PRICE_DROP: '0.05'
+          V33_MAX_SPREAD: '0.05'
+          V33_MAX_BOOK_SLIPPAGE: '0.02'
         run: |
           # Keep one GitHub runner watching for ~50 minutes per schedule
           # event; a delayed cron need not create a 30-40m blind spot.
