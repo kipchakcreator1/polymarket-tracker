@@ -205,7 +205,11 @@ def fetch_recent_results(wallet, now):
                 unrealized = v2.asfloat(item.get("unrealized_pnl"), float("nan"))
                 pnl = realized + unrealized
                 if pnl >= -0.01:
-                    raise ValueError("REDEEMABLE_LOST returned non-losing position")
+                    # The public endpoint sometimes returns redeemable
+                    # winners or breakeven holdings for REDEEMABLE_LOST.
+                    # They are not losses; ignore the unrelated rows rather
+                    # than treating every otherwise valid wallet as broken.
+                    continue
             if not math.isfinite(pnl):
                 raise ValueError("Missing/nonfinite recent position PnL")
             data.append({
