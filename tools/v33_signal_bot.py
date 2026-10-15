@@ -29,6 +29,17 @@ MAX_RISE = float(os.getenv("V33_MAX_PRICE_RISE", "0.05"))
 MAX_DROP = float(os.getenv("V33_MAX_PRICE_DROP", "0.05"))
 MAX_SPREAD = float(os.getenv("V33_MAX_SPREAD", "0.05"))
 MAX_BOOK_SLIPPAGE = float(os.getenv("V33_MAX_BOOK_SLIPPAGE", "0.02"))
+EXCLUDE_POLITICS = os.getenv("V33_EXCLUDE_POLITICS", "1").strip().lower() not in ("0", "false", "no")
+POLITICS_CACHE_SECONDS = 900
+GAMMA_API = "https://gamma-api.polymarket.com"
+POLITICS_RE = re.compile(
+    r"\b(?:politic(?:s|al)?|election(?:s)?|presiden(?:t|cy|tial)|"
+    r"congress|senat(?:e|or|ors)|parliament|prime.minister|"
+    r"govern(?:ment|or)|mayor|referendum|impeach\w*|white.house|"
+    r"supreme.court|cabinet|ballot|vot(?:e|ing|er)|"
+    r"legislat(?:ion|ure)|diploma(?:cy|tic)|ceasefire|sanction(?:s|ed)?|"
+    r"trump|biden|putin|zelensky|vance|macron|starmer|netanyahu)\b",
+    re.I)
 # Wallets supplied by the user stay at the front of a qualified shortlist.
 # This never bypasses the same minimum history, PnL or risk filters.
 PRIORITY_WALLETS = frozenset(w.strip().lower() for w in
@@ -107,7 +118,8 @@ def select_wallets(shortlist, now):
 def blank_state():
     return {"version": VERSION, "cursors": {}, "seen": {},
             "pending": {}, "sent": {}, "counters": {},
-            "recent_form_cache": {}, "active_form_cache": {}, "conflicting_markets": {},
+            "recent_form_cache": {}, "active_form_cache": {}, "politics_cache": {},
+            "conflicting_markets": {},
             "boot_notified": False}
 
 
@@ -124,6 +136,8 @@ def load_state():
         raise ValueError("Corrupted v3.3 recent form cache")
     if not isinstance(value.setdefault("active_form_cache", {}), dict):
         raise ValueError("Corrupted v3.3 active form cache")
+    if not isinstance(value.setdefault("politics_cache", {}), dict):
+        raise ValueError("Corrupted v3.3 politics cache")
     if not isinstance(value.setdefault("conflicting_markets", {}), dict):
         raise ValueError("Corrupted v3.3 conflict cache")
     return value
@@ -367,6 +381,79 @@ def fast_market_reason(group, now):
     return None
 
 
+def political_labels(obj):
+    """Classify event/market category, tags and public market text."""
+    if not isinstance(obj, dict):
+        return False
+    for field in ("category", "subcategory", "question", "title", "slug"):
+        if POLITICS_RE.search(str(obj.get(field) or "").replace("-", " ")):
+            return True
+    for field in ("tags", "categories"):
+        raw = obj.get(field) or []
+        if isinstance(raw, dict):
+            raw = [raw]
+        if isinstance(raw, list):
+            for tag in raw:
+                if isinstance(tag, dict):
+                    if political_labels({k: tag.get(k) for k in ("label", "slug", "title", "category")}):
+                        return True
+                elif POLITICS_RE.search(str(tag).replace("-", " ")):
+                    return True
+    return False
+
+
+def political_market_reason(state, group, now):
+    """Consult official Gamma market and event labels before any Telegram alert.
+
+    Never accept unknown metadata as proven nonpolitical. Cache by condition,
+    since many watched wallets can trade the same event simultaneously.
+    """
+    if not EXCLUDE_POLITICS:
+        return None
+    if (POLITICS_RE.search(str(group.get("title") or "")) or
+            POLITICS_RE.search(str(group.get("url") or "").replace("-", " "))):
+        return "political_market"
+    condition = str(group["condition"]).lower()
+    cache = state.setdefault("politics_cache", {})
+    record = cache.get(condition)
+    if (isinstance(record, dict) and
+            0 <= now - int(record.get("checked_at") or 0) <= POLITICS_CACHE_SECONDS and
+            isinstance(record.get("political"), bool)):
+        return "political_market" if record["political"] else None
+    markets = v2.request_json("/markets", {"condition_ids": condition},
+                              base=GAMMA_API, tries=2, timeout=12)
+    if not isinstance(markets, list):
+        raise ValueError("Unexpected Gamma market metadata")
+    matches = [m for m in markets if isinstance(m, dict) and
+               str(m.get("conditionId") or "").lower() == condition]
+    if len(matches) != 1:
+        raise ValueError("Missing or ambiguous Gamma market metadata")
+    market = matches[0]
+    political = political_labels(market)
+    for event in market.get("events") or []:
+        political = political or political_labels(event)
+    # Event tags are authoritative when market fields omit its category.
+    slug = str(group.get("url") or "").split("/event/")[-1]
+    if "/event/" not in str(group.get("url") or ""):
+        slug = ""
+    if not slug and market.get("events"):
+        slug = str(market["events"][0].get("slug") or "")
+    if not political and slug and re.fullmatch(r"[A-Za-z0-9_-]{1,220}", slug):
+        events = v2.request_json("/events", {"slug": slug},
+                                 base=GAMMA_API, tries=2, timeout=12)
+        if not isinstance(events, list) or not events:
+            raise ValueError("Gamma event category could not be verified")
+        matched = [e for e in events if isinstance(e, dict) and e.get("slug") == slug]
+        if len(matched) != 1:
+            raise ValueError("Gamma event slug mismatch")
+        political = political_labels(matched[0])
+    elif not political and not slug and not market.get("tags"):
+        # No category, no event identity: cannot verify this isn't politics.
+        raise ValueError("Market category missing; politics filter unavailable")
+    cache[condition] = {"checked_at": now, "political": political}
+    return "political_market" if political else None
+
+
 def check_trade(group, cand):
     if not v32.market_accepts_orders(group["condition"]):
         return None, "market_closed"
@@ -500,6 +587,16 @@ def deliver(state, selected, now):
             del state["pending"][key]
             continue
         try:
+            politics_reason = political_market_reason(state, group, now)
+        except Exception as exc:
+            mark(state, "politics_metadata_error")
+            print("V33 POLITICS WARNING:", type(exc).__name__, str(exc)[:100])
+            continue  # fail closed; do not send unclassified markets
+        if politics_reason:
+            mark(state, politics_reason)
+            del state["pending"][key]
+            continue
+        try:
             quote, reason = check_trade(group, cand)
         except Exception as exc:
             mark(state, "verification_error")
@@ -610,6 +707,10 @@ def main():
     state["conflicting_markets"] = {
         k: v for k, v in state["conflicting_markets"].items()
         if 0 <= now - int(v) <= MAX_AGE}
+    state["politics_cache"] = {
+        k: v for k, v in state["politics_cache"].items()
+        if isinstance(v, dict) and
+        0 <= now - int(v.get("checked_at") or 0) <= POLITICS_CACHE_SECONDS}
     state["last_run"] = {"universe": source.get("candidate_count"),
                          "watching": len(selected), "priority_watching":
                          sum(w in selected for w in PRIORITY_WALLETS),
