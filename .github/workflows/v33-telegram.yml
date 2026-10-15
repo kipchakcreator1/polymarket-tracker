@@ -9,6 +9,12 @@ on:
       - '.github/workflows/v33-telegram.yml'
   schedule:
     - cron: '6-59/5 * * * *'
+  # Extra wake-ups driven by existing production workflows, without editing them.
+  workflow_run:
+    workflows:
+      - 'Polymarket Smart Tracker v3.1 Fresh'
+      - 'Tracker v3.2 Experimental Telegram (separate bot)'
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -20,8 +26,10 @@ concurrency:
 
 jobs:
   v33-telegram:
+    # Do not react to failed workflows or runs from unexpected branches.
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 18
     steps:
       - name: Check out isolated v3.3 research branch only
         uses: actions/checkout@v4
@@ -55,7 +63,17 @@ jobs:
           V33_MAX_ALERTS: '6'
           V33_MAX_PRICE_RISE: '0.05'
         run: |
-          python -u tools/v33_signal_bot.py
+          # 3 reads per launch; each read persists local dedupe/cursors before
+          # the next one. Old trades remain research-only, never sent as fresh.
+          # Three polls cover ~3 minutes even if GitHub cron runs late.
+          set -euo pipefail
+          for pass in 1 2 3; do
+            echo "V33 POLL PASS ${pass}/3 at $(date -u +%FT%TZ)"
+            python -u tools/v33_signal_bot.py
+            if [ "${pass}" != 3 ]; then
+              sleep 90
+            fi
+          done
 
       - name: Persist ONLY v3.3 signal state on research branch
         if: success()
