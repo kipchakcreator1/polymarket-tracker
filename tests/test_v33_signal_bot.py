@@ -149,13 +149,13 @@ class BotTests(unittest.TestCase):
         self.assertEqual(result["loss_streak"], 7)
         self.assertAlmostEqual(result["positive_rate"], .65)
         state = bot.blank_state()
-        with mock.patch.object(bot.v2, "request_json", return_value=rows):
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
             reason = bot.recent_form_reason(state, W, NOW)
         self.assertEqual(reason, "recent_loss_streak")
 
     def test_last_twenty_winrate_floor_blocks_poor_performance(self):
         rows = [{"realizedPnl": 2}] * 11 + [{"realizedPnl": -1}] * 9
-        with mock.patch.object(bot.v2, "request_json", return_value=rows):
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
             self.assertEqual(
                 bot.recent_form_reason(bot.blank_state(), W, NOW),
                 "recent_positive_rate_low")
@@ -163,7 +163,7 @@ class BotTests(unittest.TestCase):
     def test_good_recent_form_is_cached_three_minutes(self):
         rows = [{"realizedPnl": 4}] * 18 + [{"realizedPnl": -2}] * 2
         state = bot.blank_state()
-        with mock.patch.object(bot.v2, "request_json", return_value=rows) as req:
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows) as req:
             self.assertIsNone(bot.recent_form_reason(state, W, NOW))
             self.assertIsNone(bot.recent_form_reason(state, W, NOW + 150))
             self.assertIsNone(bot.recent_form_reason(state, W, NOW + 181))
@@ -191,7 +191,7 @@ class BotTests(unittest.TestCase):
         with mock.patch.object(bot, "political_market_reason", return_value=None), \
              mock.patch.object(bot, "check_trade", return_value=(
                  {"price": .51, "best_ask": .51}, None)), \
-             mock.patch.object(bot.v2, "request_json", return_value=rows), \
+             mock.patch.object(bot, "fetch_recent_results", return_value=rows), \
              mock.patch.object(bot.v2, "send_telegram") as sender:
             count = bot.deliver(state, {W: {"name": "Test", "winrate": .91}}, NOW)
         self.assertEqual(count, 0)
@@ -202,7 +202,7 @@ class BotTests(unittest.TestCase):
     def test_recent_history_high_winrate_but_large_losses_is_blocked(self):
         rows = [{"realizedPnl": 1}] * 14 + [{"realizedPnl": -10}] * 6
         state = bot.blank_state()
-        with mock.patch.object(bot.v2, "request_json", return_value=rows):
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
             result = bot.recent_form_reason(state, W, NOW)
         self.assertEqual(result, "recent_negative_expectancy_sample")
         self.assertAlmostEqual(state["recent_form_cache"][W]["net_pnl"], -46)
@@ -543,6 +543,94 @@ class BotTests(unittest.TestCase):
             bot.political_market_reason(state, g, NOW)
             bot.political_market_reason(state, g, NOW + 950)
         self.assertEqual(r.call_count, 4)
+
+
+    def test_recent_v2_combines_closed_and_settled_unredeemed_losses(self):
+        now = NOW
+        def position(i, status, pnl, last):
+            row = {"proxy_wallet": W, "condition_id": COND,
+                   "token_id": str(i), "last_event_at": last,
+                   "status": status, "realized_pnl": pnl}
+            if status == "REDEEMABLE":
+                row.update(redeemable=True, unrealized_pnl=pnl)
+                row["realized_pnl"] = 0
+            return row
+        closed = [position(i, "CLOSED", 2, now - i) for i in range(30)]
+        lost = [position(100+i, "REDEEMABLE", -20, now-20-i)
+                for i in range(7)]
+        replies = [
+            {"data": closed, "pagination": {"has_more": False}},
+            {"data": lost, "pagination": {"has_more": False}}
+        ]
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=replies) as req:
+            rows = bot.fetch_recent_results(W, now)
+        self.assertEqual(req.call_count, 2)
+        self.assertEqual(req.call_args_list[0].args[0], "/v2/positions")
+        self.assertEqual(req.call_args_list[0].args[1]["status"], "CLOSED")
+        self.assertEqual(req.call_args_list[1].args[1]["status"], "REDEEMABLE_LOST")
+        self.assertEqual(sum(r["_unredeemed_lost"] for r in rows), 7)
+        self.assertEqual(len(rows), 37)
+        for r in rows:
+            r["_now"] = now
+        snap = bot.recent_form(rows)
+        self.assertEqual(snap["unredeemed_lost_24h"], 7)
+
+    def test_unredeemed_losing_positions_block_previously_good_wallet(self):
+        now = NOW
+        rows = [{"realizedPnl": 10, "timestamp": now - i,
+                 "_now": now} for i in range(20)]
+        rows.extend([{"realizedPnl": -20, "timestamp": now - 40 - i,
+                      "_now": now, "_unredeemed_lost": True} for i in range(7)])
+        state = bot.blank_state()
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
+            result = bot.recent_form_reason(state, W, now)
+        self.assertEqual(result, "recent_unredeemed_loss_cluster")
+        self.assertEqual(state["recent_form_cache"][W]["positive_rate"], 1.)
+
+    def test_recent_v2_rejects_incomplete_or_unverifiable_losers(self):
+        row = {"proxy_wallet": W, "condition_id": COND, "token_id": TOKEN,
+               "last_event_at": NOW, "status": "REDEEMABLE",
+               "redeemable": False, "realized_pnl": 0, "unrealized_pnl": -100}
+        replies = [{"data": [], "pagination": {"has_more": False}},
+                   {"data": [row], "pagination": {"has_more": False}}]
+        with mock.patch.object(bot.v2, "request_json", side_effect=replies):
+            with self.assertRaises(ValueError):
+                bot.fetch_recent_results(W, NOW)
+
+    def test_recent_v2_refuses_unbound_or_bad_api_data(self):
+        replies = [{"data": [], "pagination": {"has_more": False}},
+                   {"data": [{"wrong_wallet": "anonymous"}],
+                    "pagination": {"has_more": False}}]
+        with mock.patch.object(bot.v2, "request_json", side_effect=replies):
+            with self.assertRaises(ValueError):
+                bot.fetch_recent_results(W, NOW)
+
+    def test_recent_v2_dedupes_same_token_from_closed_and_redeemable(self):
+        base = {"proxy_wallet": W, "condition_id": COND,
+                "token_id": TOKEN, "last_event_at": NOW}
+        old = dict(base, status="CLOSED", realized_pnl=100)
+        lost = dict(base, status="REDEEMABLE", redeemable=True,
+                    realized_pnl=0, unrealized_pnl=-50)
+        replies = [{"data": [old], "pagination": {"has_more": False}},
+                   {"data": [lost], "pagination": {"has_more": False}}]
+        with mock.patch.object(bot.v2, "request_json", side_effect=replies):
+            rows = bot.fetch_recent_results(W, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["realizedPnl"], -50)
+
+    def test_recent_cache_invalidates_old_pre_migration_history(self):
+        state = bot.blank_state()
+        state["recent_form_cache"][W] = {
+            "checked_at": NOW, "closed": 20, "positive_rate": 1.,
+            "loss_streak": 0, "net_pnl": 999, "profit_factor": 999,
+        }
+        rows = [{"realizedPnl": 3}] * 20
+        with mock.patch.object(bot, "fetch_recent_results",
+                               return_value=rows) as fetch:
+            self.assertIsNone(bot.recent_form_reason(state, W, NOW))
+        fetch.assert_called_once()
+        self.assertEqual(state["recent_form_cache"][W]["unredeemed_lost_24h"], 0)
 
 
 if __name__ == "__main__":
