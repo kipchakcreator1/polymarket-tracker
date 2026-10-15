@@ -571,9 +571,7 @@ class BotTests(unittest.TestCase):
         self.assertEqual(req.call_args_list[1].args[1]["status"], "REDEEMABLE_LOST")
         self.assertEqual(sum(r["_unredeemed_lost"] for r in rows), 7)
         self.assertEqual(len(rows), 37)
-        for r in rows:
-            r["_now"] = now
-        snap = bot.recent_form(rows)
+        snap = bot.recent_form(rows, now)
         self.assertEqual(snap["unredeemed_lost_24h"], 7)
 
     def test_unredeemed_losing_positions_block_previously_good_wallet(self):
