@@ -46,6 +46,14 @@ RECENT_MAX_LOSS_STREAK = 3
 MAX_FAST_TRADE_AGE = 75
 FAST_MARKET_END_BUFFER = 90
 RECENT_CACHE_SECONDS = 180
+# Active != closed: require a fresh, complete view of unrealized red positions.
+ACTIVE_CACHE_SECONDS = 60
+ACTIVE_PAGE_LIMIT = 100
+ACTIVE_PAGE_CAP = 5
+ACTIVE_MIN_ENTRY_USD = 10.0
+ACTIVE_MATERIAL_LOSS_PCT = .05
+ACTIVE_MAX_RED_FRACTION = .60
+ACTIVE_MAX_DRAWDOWN = .15
 QUOTE_STAKE = 5
 DEST_RE = re.compile(r"^-?[0-9]{4,20}$|^@[A-Za-z][A-Za-z0-9_]{4,31}$")
 
@@ -99,7 +107,7 @@ def select_wallets(shortlist, now):
 def blank_state():
     return {"version": VERSION, "cursors": {}, "seen": {},
             "pending": {}, "sent": {}, "counters": {},
-            "recent_form_cache": {}, "conflicting_markets": {},
+            "recent_form_cache": {}, "active_form_cache": {}, "conflicting_markets": {},
             "boot_notified": False}
 
 
@@ -114,6 +122,8 @@ def load_state():
             raise ValueError("Corrupted v3.3 state: " + k)
     if not isinstance(value.setdefault("recent_form_cache", {}), dict):
         raise ValueError("Corrupted v3.3 recent form cache")
+    if not isinstance(value.setdefault("active_form_cache", {}), dict):
+        raise ValueError("Corrupted v3.3 active form cache")
     if not isinstance(value.setdefault("conflicting_markets", {}), dict):
         raise ValueError("Corrupted v3.3 conflict cache")
     return value
@@ -180,6 +190,103 @@ def recent_form_reason(state, wallet, now):
             (value["profit_factor"] is not None and
              value["profit_factor"] < RECENT_MIN_PROFIT_FACTOR)):
         return "recent_negative_expectancy_sample"
+    return None
+
+
+def fetch_open_positions(wallet):
+    """Fetch the WHOLE open portfolio, not just the current signal's market.
+
+    v2/positions OPEN can include redeemable holdings; those are not live
+    active positions and are deliberately excluded from drawdown scoring.
+    Never claim good active form from a truncated / partial API response.
+    """
+    cursor = None
+    rows = []
+    for _ in range(ACTIVE_PAGE_CAP):
+        params = {"user": wallet, "status": "OPEN",
+                  "filter_type": "TOKENS", "filter_amount": "0.01",
+                  "sort_by": "CURRENT_VALUE", "sort_direction": "DESC",
+                  "limit": ACTIVE_PAGE_LIMIT}
+        if cursor:
+            params["cursor"] = cursor
+        response = v2.request_json("/v2/positions", params, tries=2, timeout=12)
+        if not (isinstance(response, dict) and
+                isinstance(response.get("data"), list) and
+                isinstance(response.get("pagination"), dict)):
+            raise ValueError("Malformed active positions API response")
+        page = response["data"]
+        if any(not isinstance(x, dict) for x in page):
+            raise ValueError("Malformed active position row")
+        rows.extend(page)
+        pagination = response["pagination"]
+        if pagination.get("has_more") is False:
+            return rows
+        if pagination.get("has_more") is not True:
+            raise ValueError("Active positions pagination status unknown")
+        new_cursor = pagination.get("next_cursor")
+        if not isinstance(new_cursor, str) or not new_cursor or new_cursor == cursor:
+            raise ValueError("Active positions pagination cursor invalid")
+        cursor = new_cursor
+    raise RuntimeError("Active positions page cap: incomplete wallet snapshot")
+
+
+def active_form(rows):
+    """Unrealized PnL of live held positions, not finalized trade results."""
+    if not isinstance(rows, list):
+        raise ValueError("Invalid active position list")
+    checked = 0
+    red = 0
+    total_cost = 0.0
+    unrealized = 0.0
+    for pos in rows:
+        if not isinstance(pos, dict):
+            raise ValueError("Invalid active position row")
+        # OPEN is broader than live holdings: exclude resolved/redeemable.
+        if pos.get("redeemable") is True or pos.get("status") != "OPEN":
+            continue
+        size = v2.asfloat(pos.get("current_size"), float("nan"))
+        if not math.isfinite(size):
+            raise ValueError("Unknown current size")
+        if size < .01:
+            continue
+        cost = v2.asfloat(pos.get("entry_cost_usdc"), float("nan"))
+        pnl = v2.asfloat(pos.get("unrealized_pnl"), float("nan"))
+        if not math.isfinite(cost) or not math.isfinite(pnl):
+            raise ValueError("Unknown active PnL or cost")
+        if cost <= 0:
+            raise ValueError("Invalid active entry cost")
+        if cost < ACTIVE_MIN_ENTRY_USD:
+            continue  # exclude dust and negligible exposures
+        checked += 1
+        total_cost += cost
+        unrealized += pnl
+        red += int(pnl <= -ACTIVE_MATERIAL_LOSS_PCT * cost)
+    roi = unrealized / total_cost if total_cost else 0.
+    return {"active_count": checked, "red_count": red,
+            "red_fraction": red / checked if checked else 0.,
+            "unrealized_pnl": unrealized, "active_cost": total_cost,
+            "unrealized_roi": roi}
+
+
+def active_form_reason(state, wallet, now):
+    """Protect against wallets with many losing ACTIVE positions."""
+    cache = state.setdefault("active_form_cache", {})
+    result = cache.get(wallet)
+    if not (isinstance(result, dict) and
+            "unrealized_roi" in result and "red_fraction" in result and
+            0 <= now - int(result.get("checked_at") or 0) <= ACTIVE_CACHE_SECONDS):
+        result = active_form(fetch_open_positions(wallet))
+        result["checked_at"] = now
+        cache[wallet] = result
+    # Three or more materially losing holdings, or most exposures red.
+    if (result["active_count"] >= 3 and
+            result["red_count"] >= 2 and
+            result["red_fraction"] >= ACTIVE_MAX_RED_FRACTION):
+        return "active_most_positions_red"
+    # Also reject deep account-wide active drawdowns (including few positions).
+    if (result["active_cost"] >= 25 and
+            result["unrealized_roi"] <= -ACTIVE_MAX_DRAWDOWN):
+        return "active_portfolio_drawdown"
     return None
 
 
@@ -288,13 +395,19 @@ def check_trade(group, cand):
     return quote, None
 
 
-def message(group, meta, cand, quote, now, recent=None):
+def message(group, meta, cand, quote, now, recent=None, active=None):
     name = html.escape(meta["name"] or group["wallet"][:12])
     url = html.escape(group.get("url") or "", quote=True)
     link = f'<a href="https://polymarket.com/profile/{group["wallet"]}">Кошелёк</a>'
     if url:
         link = f'<a href="{url}">Рынок</a> | ' + link
     recent_note = ""
+    active_note = ""
+    if active:
+        active_note = (
+            f"\U0001f4ca Active: {active['active_count']} позиций, "
+            f"красных {active['red_count']}; "
+            f"нереализованный PnL {active['unrealized_pnl']:+,.0f}$\n")
     if recent:
         recent_note = (f"\U0001f4c9 Последние {recent['closed']} закрытий: "
                        f"{recent['positive_rate']:.0%} прибыльных; "
@@ -308,7 +421,7 @@ def message(group, meta, cand, quote, now, recent=None):
             + f"\U0001f4ca Ask: ~{quote['price']:.3f} для гипотетических "
               f"\u0024{QUOTE_STAKE:g}; задержка {(now-group['last'])//60} мин\n"
             + f"\U0001f4c8 Прибыльные закрытые позиции: {meta['winrate']:.0%} "
-              "(не точность прогнозов)\n" + recent_note + link + "\n"
+              "(не точность прогнозов)\n" + recent_note + active_note + link + "\n"
             + "\u26a0\ufe0f Исследовательский сигнал, не гарантия прибыли.")
 
 
@@ -406,9 +519,21 @@ def deliver(state, selected, now):
             del state["pending"][key]
             continue
         try:
+            active_reason = active_form_reason(state, group["wallet"], now)
+        except Exception as exc:
+            mark(state, "active_form_request_error")
+            print("V33 ACTIVE FORM WARNING:", type(exc).__name__, str(exc)[:100])
+            continue  # never send when active PnL cannot be verified
+        if active_reason:
+            mark(state, active_reason)
+            del state["pending"][key]
+            continue
+        try:
             recent = state.get("recent_form_cache", {}).get(group["wallet"])
+            active = state.get("active_form_cache", {}).get(group["wallet"])
             v2.send_telegram(message(group, selected[group["wallet"]],
-                                     cand, quote, now, recent=recent))
+                                     cand, quote, now, recent=recent,
+                                     active=active))
         except Exception as exc:
             mark(state, "telegram_error")
             print("V33 TELEGRAM WARNING:", type(exc).__name__, str(exc)[:100])
@@ -476,6 +601,10 @@ def main():
         k: v for k, v in state["recent_form_cache"].items()
         if k in selected and isinstance(v, dict)
         and 0 <= now - int(v.get("checked_at") or 0) <= 3600}
+    state["active_form_cache"] = {
+        k: v for k, v in state["active_form_cache"].items()
+        if k in selected and isinstance(v, dict)
+        and 0 <= now - int(v.get("checked_at") or 0) <= 600}
     state["conflicting_markets"] = {
         k: v for k, v in state["conflicting_markets"].items()
         if 0 <= now - int(v) <= MAX_AGE}
