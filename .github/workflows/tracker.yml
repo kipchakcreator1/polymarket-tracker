@@ -1,8 +1,9 @@
 name: Polymarket Smart Tracker v3.1 Fresh
 
+# v3.1 PAUSED on user request (2026-10-15): no scheduled runs.
+# To resume, restore the former schedule: cron '2-59/5 * * * *'.
+# Manual workflow_dispatch is retained for intentional testing only.
 on:
-  schedule:
-    - cron: '2-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
