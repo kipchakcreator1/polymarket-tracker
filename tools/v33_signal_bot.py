@@ -25,6 +25,12 @@ MIN_USD = float(os.getenv("V33_MIN_TRADE_USD", "50"))
 MIN_PRICE = float(os.getenv("V33_MIN_PRICE", "0.15"))
 MAX_PRICE = float(os.getenv("V33_MAX_PRICE", "0.85"))
 MAX_RISE = float(os.getenv("V33_MAX_PRICE_RISE", "0.05"))
+# Wallets supplied by the user stay at the front of a qualified shortlist.
+# This never bypasses the same minimum history, PnL or risk filters.
+PRIORITY_WALLETS = frozenset(w.strip().lower() for w in
+    os.getenv("V33_PRIORITY_WALLETS", "").split(",")
+    if v2.WALLET_RE.fullmatch(w.strip().lower()))
+FAST_5M_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-5m-\d+\b", re.I)
 MAX_AGE = 300
 MAX_CATCHUP = 7200
 QUOTE_STAKE = 5
@@ -52,23 +58,26 @@ def select_wallets(shortlist, now):
     if now - int(shortlist.get("observed_at") or 0) > 3 * 86400:
         raise ValueError("Shortlist older than 3 days")
     selected = {}
+    qualified = []
     for meta in shortlist.get("shortlist", []):
         if not isinstance(meta, dict):
             continue
         wallet = str(meta.get("wallet") or "").lower()
-        if not v2.WALLET_RE.fullmatch(wallet) or wallet in selected:
+        if not v2.WALLET_RE.fullmatch(wallet) or any(w == wallet for w, _ in qualified):
             continue
         if (v2.asfloat(meta.get("closed")) < 30 or
                 v2.asfloat(meta.get("profitable_closed_rate")) < 0.70 or
                 v2.asfloat(meta.get("realized_closed_pnl")) < 100 or
                 v2.asfloat(meta.get("profit_factor")) < 1.15):
             continue
+        qualified.append((wallet, meta))
+    # Python sort is stable: retain researcher ranking within each priority tier.
+    qualified.sort(key=lambda item: item[0] not in PRIORITY_WALLETS)
+    for wallet, meta in qualified[:MAX_WALLETS]:
         selected[wallet] = {"name": str(meta.get("name") or "")[:60],
                             "winrate": v2.asfloat(meta["profitable_closed_rate"]),
                             "profit_factor": v2.asfloat(meta["profit_factor"]),
                             "price_profile": meta.get("price_profile")}
-        if len(selected) == MAX_WALLETS:
-            break
     if not selected:
         raise RuntimeError("No qualified wallets")
     return selected
@@ -199,10 +208,18 @@ def message(group, meta, cand, quote, now):
             + "\u26a0\ufe0f Исследовательский сигнал, не гарантия прибыли.")
 
 
+def signal_sort_key(item):
+    """Prioritize the requested wallet and 5-minute crypto events if capped."""
+    group = item[1]
+    return (group["wallet"] not in PRIORITY_WALLETS,
+            FAST_5M_RE.search(group.get("url") or "") is None,
+            -int(group["last"]))
+
+
 def deliver(state, selected, now):
     sent = 0
     for key, group in sorted(list(state["pending"].items()),
-                             key=lambda x: -int(x[1]["last"])):
+                             key=signal_sort_key):
         cand, reason = candidate(group, now)
         if reason:
             mark(state, reason)
@@ -297,7 +314,9 @@ def main():
     state["cursors"] = {k: v for k, v in state["cursors"].items()
                         if k in selected}
     state["last_run"] = {"universe": source.get("candidate_count"),
-                         "watching": len(selected), "new_fills": fills,
+                         "watching": len(selected), "priority_watching":
+                         sum(w in selected for w in PRIORITY_WALLETS),
+                         "new_fills": fills,
                          "initial_wallets": baseline, "alerts": sent,
                          "request_errors": failures, "poll_gaps": gaps,
                          "suppression_totals": state["counters"]}
