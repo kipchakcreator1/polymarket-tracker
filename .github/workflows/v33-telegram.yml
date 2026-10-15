@@ -107,7 +107,8 @@ jobs:
                 git push origin HEAD:v3.3-wallet-research
               fi
             fi
-            sleep 90
+            # 45s + API work keeps 5-minute crypto signals fresher.
+            sleep 45
           done
           echo "V33 SESSION SUMMARY passes=${pass} errors=${errors}"
           if (( errors == pass )); then
