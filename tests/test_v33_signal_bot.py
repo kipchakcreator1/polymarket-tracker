@@ -87,6 +87,7 @@ class BotTests(unittest.TestCase):
         with mock.patch.object(bot, "check_trade", return_value=(
                 {"price": .51, "best_ask": .51}, None)), \
              mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
              mock.patch.object(bot.v2, "send_telegram") as sender:
             n = bot.deliver(state, meta, NOW)
             self.assertEqual(n, 1)
@@ -332,6 +333,109 @@ class BotTests(unittest.TestCase):
         self.assertFalse(bot.conflicting_wallet_signal(
             state, {"wallet": W, "condition": COND},
             {"token": TOKEN}, NOW))
+
+
+    def test_active_three_red_positions_block_even_with_good_closed_history(self):
+        wallet = W
+        state = bot.blank_state()
+        red = [
+            {"status": "OPEN", "current_size": 100, "entry_cost_usdc": 100,
+             "unrealized_pnl": -20, "redeemable": False},
+            {"status": "OPEN", "current_size": 100, "entry_cost_usdc": 100,
+             "unrealized_pnl": -10, "redeemable": False},
+            {"status": "OPEN", "current_size": 100, "entry_cost_usdc": 100,
+             "unrealized_pnl": -10, "redeemable": False}]
+        response = {"data": red,
+                    "pagination": {"has_more": False, "next_cursor": None}}
+        with mock.patch.object(bot.v2, "request_json", return_value=response):
+            reason = bot.active_form_reason(state, wallet, NOW)
+        self.assertEqual(reason, "active_most_positions_red")
+        self.assertEqual(state["active_form_cache"][wallet]["red_count"], 3)
+
+    def test_active_big_unrealized_loss_rejected_even_one_position(self):
+        pos = [{"status": "OPEN", "redeemable": False,
+                "current_size": 500, "entry_cost_usdc": 200,
+                "unrealized_pnl": -60}]
+        out = bot.active_form(pos)
+        self.assertEqual(out["active_count"], 1)
+        self.assertAlmostEqual(out["unrealized_roi"], -.30)
+        with mock.patch.object(bot, "fetch_open_positions", return_value=pos):
+            self.assertEqual(bot.active_form_reason(bot.blank_state(), W, NOW),
+                             "active_portfolio_drawdown")
+
+    def test_active_positive_portfolio_remains_eligible(self):
+        good = [
+            {"status": "OPEN", "current_size": 100, "entry_cost_usdc": 100,
+             "unrealized_pnl": 12},
+            {"status": "OPEN", "current_size": 100, "entry_cost_usdc": 100,
+             "unrealized_pnl": 8},
+            {"status": "OPEN", "current_size": 100, "entry_cost_usdc": 100,
+             "unrealized_pnl": -2}]
+        with mock.patch.object(bot, "fetch_open_positions", return_value=good):
+            self.assertIsNone(bot.active_form_reason(bot.blank_state(), W, NOW))
+
+    def test_active_resolved_positions_are_not_marked_live(self):
+        rows = [
+            {"status": "REDEEMABLE", "redeemable": True,
+             "current_size": 500, "entry_cost_usdc": 100,
+             "unrealized_pnl": -100},
+            {"status": "OPEN", "redeemable": False,
+             "current_size": 100, "entry_cost_usdc": 100,
+             "unrealized_pnl": 8}]
+        form = bot.active_form(rows)
+        self.assertEqual(form["active_count"], 1)
+        self.assertEqual(form["red_count"], 0)
+
+    def test_active_missing_pnl_is_unverified_not_zero(self):
+        rows = [{"status": "OPEN", "current_size": 100,
+                 "entry_cost_usdc": 100}]
+        with self.assertRaises(ValueError):
+            bot.active_form(rows)
+
+    def test_active_pagination_must_be_complete(self):
+        first = {"data": [], "pagination":
+                 {"has_more": True, "next_cursor": "next-page"}}
+        second = {"data": [], "pagination":
+                  {"has_more": False, "next_cursor": None}}
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=[first, second]) as req:
+            self.assertEqual(bot.fetch_open_positions(W), [])
+        self.assertEqual(req.call_count, 2)
+        self.assertEqual(req.call_args[0][0], "/v2/positions")
+
+    def test_active_pagination_missing_cursor_fails_closed(self):
+        bad = {"data": [], "pagination":
+               {"has_more": True, "next_cursor": None}}
+        with mock.patch.object(bot.v2, "request_json", return_value=bad):
+            with self.assertRaises(ValueError):
+                bot.fetch_open_positions(W)
+
+    def test_active_api_failure_sends_no_signal(self):
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.6), NOW)
+        with mock.patch.object(bot, "check_trade", return_value=(
+                 {"price": .61, "best_ask": .60, "spread": .02}, None)), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot.v2, "request_json",
+                               side_effect=TimeoutError("public API unavailable")), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            count = bot.deliver(
+                state, {W: {"name": "Trader", "winrate": .93}}, NOW)
+        self.assertEqual(count, 0)
+        sender.assert_not_called()
+        self.assertEqual(state["counters"]["active_form_request_error"], 1)
+        self.assertEqual(len(state["pending"]), 1)
+
+    def test_active_cache_is_short_and_keeps_api_load_bounded(self):
+        positive = [{"status": "OPEN", "current_size": 100,
+                     "entry_cost_usdc": 100, "unrealized_pnl": 20}]
+        state = bot.blank_state()
+        with mock.patch.object(bot, "fetch_open_positions",
+                               return_value=positive) as fetcher:
+            self.assertIsNone(bot.active_form_reason(state, W, NOW))
+            self.assertIsNone(bot.active_form_reason(state, W, NOW + 40))
+            self.assertIsNone(bot.active_form_reason(state, W, NOW + 65))
+        self.assertEqual(fetcher.call_count, 2)
 
 
 if __name__ == "__main__":
