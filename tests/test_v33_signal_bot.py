@@ -73,7 +73,8 @@ class BotTests(unittest.TestCase):
     def test_verification_fail_closed(self):
         state = bot.blank_state()
         bot.add_fill(state, trade(price=.5), NOW)
-        with mock.patch.object(bot, "check_trade", return_value=(None, "book_no_liquidity")), \
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade", return_value=(None, "book_no_liquidity")), \
              mock.patch.object(bot.v2, "send_telegram") as sender:
             n = bot.deliver(state, {W: {"name": "Tester", "winrate": .88}}, NOW)
         self.assertEqual(n, 0)
@@ -84,7 +85,8 @@ class BotTests(unittest.TestCase):
         state = bot.blank_state()
         bot.add_fill(state, trade(price=.5), NOW)
         meta = {W: {"name": "Tester", "winrate": .88}}
-        with mock.patch.object(bot, "check_trade", return_value=(
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade", return_value=(
                 {"price": .51, "best_ask": .51}, None)), \
              mock.patch.object(bot, "recent_form_reason", return_value=None), \
              mock.patch.object(bot, "active_form_reason", return_value=None), \
@@ -170,7 +172,8 @@ class BotTests(unittest.TestCase):
     def test_recent_history_api_failure_never_sends(self):
         state = bot.blank_state()
         bot.add_fill(state, trade(price=.5), NOW)
-        with mock.patch.object(bot, "check_trade", return_value=(
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade", return_value=(
                  {"price": .51, "best_ask": .51}, None)), \
              mock.patch.object(bot.v2, "request_json",
                                side_effect=TimeoutError("offline")), \
@@ -185,7 +188,8 @@ class BotTests(unittest.TestCase):
         state = bot.blank_state()
         bot.add_fill(state, trade(price=.5), NOW)
         rows = [{"realizedPnl": -1}] * 7 + [{"realizedPnl": 10}] * 13
-        with mock.patch.object(bot, "check_trade", return_value=(
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade", return_value=(
                  {"price": .51, "best_ask": .51}, None)), \
              mock.patch.object(bot.v2, "request_json", return_value=rows), \
              mock.patch.object(bot.v2, "send_telegram") as sender:
@@ -306,7 +310,8 @@ class BotTests(unittest.TestCase):
         self.assertTrue(bot.add_fill(state, second, NOW))
         selected = {W: {"name": "A", "winrate": .81},
                     other_wallet: {"name": "B", "winrate": .83}}
-        with mock.patch.object(bot, "check_trade",
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade",
                                return_value=({"price": .61}, None)), \
              mock.patch.object(bot.v2, "send_telegram") as sender:
             count = bot.deliver(state, selected, NOW)
@@ -419,7 +424,8 @@ class BotTests(unittest.TestCase):
     def test_active_api_failure_sends_no_signal(self):
         state = bot.blank_state()
         bot.add_fill(state, trade(price=.6), NOW)
-        with mock.patch.object(bot, "check_trade", return_value=(
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade", return_value=(
                  {"price": .61, "best_ask": .60, "spread": .02}, None)), \
              mock.patch.object(bot, "recent_form_reason", return_value=None), \
              mock.patch.object(bot.v2, "request_json",
@@ -442,6 +448,101 @@ class BotTests(unittest.TestCase):
             self.assertIsNone(bot.active_form_reason(state, W, NOW + 40))
             self.assertIsNone(bot.active_form_reason(state, W, NOW + 65))
         self.assertEqual(fetcher.call_count, 2)
+
+
+    def test_politics_title_is_blocked_before_calling_api(self):
+        g = {"condition": COND, "wallet": W,
+             "title": "Will Trump win the election?",
+             "url": "https://polymarket.com/event/trump-us-election"}
+        with mock.patch.object(bot.v2, "request_json") as request:
+            reason = bot.political_market_reason(bot.blank_state(), g, NOW)
+        self.assertEqual(reason, "political_market")
+        request.assert_not_called()
+
+    def test_politics_tag_label_is_recognized_even_without_political_slug(self):
+        self.assertTrue(bot.political_labels(
+            {"question": "Will it happen?",
+             "tags": [{"label": "Politics", "slug": "general"}]}))
+
+    def test_politics_hidden_in_parent_event_tags_is_blocked(self):
+        g = {"condition": COND, "wallet": W,
+             "title": "Will it happen?",
+             "url": "https://polymarket.com/event/special-2026"}
+        market = {"conditionId": COND, "question": "Will it happen?",
+                  "events": [{"slug": "special-2026"}]}
+        event = {"slug": "special-2026", "title": "Special event",
+                 "tags": [{"slug": "politics", "label": "Politics"}]}
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=[[market], [event]]) as fetch:
+            state = bot.blank_state()
+            reason = bot.political_market_reason(state, g, NOW)
+        self.assertEqual(reason, "political_market")
+        self.assertEqual(fetch.call_count, 2)
+        self.assertTrue(state["politics_cache"][COND]["political"])
+
+    def test_crypto_event_category_passes_without_politics(self):
+        g = {"condition": COND, "wallet": W,
+             "title": "Bitcoin Up or Down - October 15",
+             "url": "https://polymarket.com/event/btc-updown-5m-1792056900"}
+        market = {"conditionId": COND, "question": "Bitcoin Up or Down"}
+        event = {"slug": "btc-updown-5m-1792056900", "title": "Bitcoin Up or Down",
+                 "tags": [{"slug": "crypto", "label": "Crypto"}]}
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=[[market], [event]]) as fetch:
+            state = bot.blank_state()
+            self.assertIsNone(bot.political_market_reason(state, g, NOW))
+            self.assertIsNone(bot.political_market_reason(state, g, NOW + 120))
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_sports_event_category_passes_without_politics(self):
+        g = {"condition": COND, "wallet": W,
+             "title": "Lakers vs Celtics",
+             "url": "https://polymarket.com/event/nba-lakers-celtics"}
+        market = {"conditionId": COND, "question": "Lakers vs Celtics"}
+        event = {"slug": "nba-lakers-celtics", "title": "Lakers vs Celtics",
+                 "tags": [{"slug": "sports", "label": "Sports"}]}
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=[[market], [event]]):
+            self.assertIsNone(bot.political_market_reason(
+                bot.blank_state(), g, NOW))
+
+    def test_unknown_political_category_metadata_fails_closed(self):
+        g = {"condition": COND, "wallet": W, "title": "Will it happen?",
+             "url": "https://polymarket.com/event/ambiguous-event"}
+        market = {"conditionId": COND, "question": "Will it happen?"}
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=[[market], []]):
+            with self.assertRaises(ValueError):
+                bot.political_market_reason(bot.blank_state(), g, NOW)
+
+    def test_politics_alert_is_skipped_before_copy_price_checks(self):
+        state = bot.blank_state()
+        row = trade(price=.6)
+        row["title"] = "Who will win the presidential election?"
+        row["event_slug"] = "us-presidential-election"
+        bot.add_fill(state, row, NOW)
+        with mock.patch.object(bot, "check_trade") as quote_check, \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            count = bot.deliver(
+                state, {W: {"name": "Trader", "winrate": .91}}, NOW)
+        self.assertEqual(count, 0)
+        sender.assert_not_called()
+        quote_check.assert_not_called()
+        self.assertEqual(state["counters"]["political_market"], 1)
+
+    def test_politics_cache_notifies_again_after_expiration(self):
+        g = {"condition": COND, "wallet": W,
+             "title": "Lakers vs Celtics",
+             "url": "https://polymarket.com/event/nba-lakers-celtics"}
+        market = {"conditionId": COND, "question": "Lakers vs Celtics",
+                  "tags": [{"slug": "sports"}]}
+        event = {"slug": "nba-lakers-celtics", "tags": [{"slug": "sports"}]}
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=[[market], [event], [market], [event]]) as r:
+            state = bot.blank_state()
+            bot.political_market_reason(state, g, NOW)
+            bot.political_market_reason(state, g, NOW + 950)
+        self.assertEqual(r.call_count, 4)
 
 
 if __name__ == "__main__":
