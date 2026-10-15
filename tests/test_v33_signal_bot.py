@@ -641,5 +641,22 @@ class BotTests(unittest.TestCase):
         self.assertEqual(bot.recent_form(rows, NOW)["unredeemed_lost_24h"], 1)
 
 
+    def test_recent_v2_skips_breakeven_redeemables_without_hiding_real_losses(self):
+        base = {"proxy_wallet": W, "condition_id": COND,
+                "last_event_at": NOW, "status": "REDEEMABLE",
+                "redeemable": True, "realized_pnl": 0}
+        unrelated = dict(base, token_id="winner", unrealized_pnl=0)
+        real_loss = dict(base, token_id="loser", unrealized_pnl=-15)
+        replies = [{"data": [], "pagination": {"has_more": False}},
+                   {"data": [unrelated, real_loss],
+                    "pagination": {"has_more": False}}]
+        with mock.patch.object(bot.v2, "request_json", side_effect=replies):
+            result = bot.fetch_recent_results(W, NOW)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["token_id"], "loser")
+        self.assertEqual(result[0]["realizedPnl"], -15)
+
+
+
 if __name__ == "__main__":
     unittest.main()
