@@ -1,0 +1,70 @@
+name: Tracker v3.3 Telegram (separate bot)
+
+# Distinct v3.3 bot, separate research branch and state.
+# Does not use or modify production v3.1 or experimental v3.2 bot/state.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v33-telegram.yml'
+  schedule:
+    - cron: '6-59/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v33-telegram-separate-writer
+  cancel-in-progress: false
+
+jobs:
+  v33-telegram:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out isolated v3.3 research branch only
+        uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify offline v3.3 bot tests
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_signal_bot.py
+          python -m unittest discover -s tests -p 'test_v33_signal_bot.py' -v
+
+      - name: Monitor shortlisted wallets and notify via DISTINCT bot
+        env:
+          PYTHONPATH: .
+          TELEGRAM_V31_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_V32_BOT_TOKEN: ${{ secrets.TELEGRAM_V32_BOT_TOKEN }}
+          TELEGRAM_V33_BOT_TOKEN: ${{ secrets.TELEGRAM_V33_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          V33_MONITOR_MAX: '200'
+          V33_MIN_TRADE_USD: '50'
+          V33_MIN_PRICE: '0.15'
+          V33_MAX_PRICE: '0.85'
+          V33_MAX_ALERTS: '6'
+          V33_MAX_PRICE_RISE: '0.05'
+        run: |
+          python -u tools/v33_signal_bot.py
+
+      - name: Persist ONLY v3.3 signal state on research branch
+        if: success()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/v33_signal_state.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(v3.3): isolated Telegram signal cursors [skip ci]'
+            git pull --rebase origin v3.3-wallet-research
+            git push origin HEAD:v3.3-wallet-research
+          fi
