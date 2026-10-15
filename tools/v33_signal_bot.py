@@ -69,6 +69,7 @@ ACTIVE_MIN_ENTRY_USD = 10.0
 ACTIVE_MATERIAL_LOSS_PCT = .05
 ACTIVE_MAX_RED_FRACTION = float(os.getenv("V33_ACTIVE_MAX_RED_FRACTION", "0.60"))
 ACTIVE_MAX_DRAWDOWN = float(os.getenv("V33_ACTIVE_MAX_DRAWDOWN", "0.15"))
+QUIET_STATUS_INTERVAL = 3600  # one truthful bot-health notice/hour at most
 QUOTE_STAKE = 5
 DEST_RE = re.compile(r"^-?[0-9]{4,20}$|^@[A-Za-z][A-Za-z0-9_]{4,31}$")
 
@@ -731,6 +732,28 @@ def deliver(state, selected, now):
     return sent
 
 
+def send_quiet_status(state, now, fresh_fills, watching):
+    """One transparent health message/hour if no verified BUY signals."""
+    history = [int(stamp) for stamp in state.get("sent", {}).values()]
+    last_signal = max(history) if history else int(
+        state.setdefault("monitor_started_at", now))
+    last_status = int(state.get("last_quiet_status_at") or 0)
+    if (now - last_signal < QUIET_STATUS_INTERVAL or
+            now - last_status < QUIET_STATUS_INTERVAL):
+        return False
+    minutes = max(0, (now - last_signal) // 60)
+    v2.send_telegram(
+        "\\U0001f6f0 <b>v3.3 • мониторинг работает</b>\\n"
+        f"\\U0001f50e Проверяем {watching} кошельков.\\n"
+        f"\\U0001f9ea Новых трейдов в последней проверке: {fresh_fills}.\\n"
+        f"\\U0001f4e8 Последний подтверждённый BUY-сигнал: {minutes} мин назад.\\n"
+        "\\u26a0\\ufe0f Подходящих по фильтрам трейдов пока нет. "
+        "Это статус, не сигнал к трейду.")
+    state["last_quiet_status_at"] = now
+    mark(state, "quiet_status_sent")
+    return True
+
+
 def main():
     validate_route(os.environ)
     now = int(time.time())
@@ -775,6 +798,12 @@ def main():
     if failures == len(selected):
         raise RuntimeError("All wallet queries failed")
     sent = deliver(state, selected, now)
+    if sent == 0:
+        try:
+            send_quiet_status(state, now, fills, len(selected))
+        except Exception as exc:
+            mark(state, "quiet_status_error")
+            print("V33 STATUS WARNING:", type(exc).__name__, str(exc)[:100])
     state["seen"] = {k: v for k, v in state["seen"].items()
                      if v >= now - 2 * 86400}
     state["sent"] = {k: v for k, v in state["sent"].items()
