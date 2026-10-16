@@ -29,6 +29,7 @@ RECENT = 7 * 86400
 CRYPTO_LOOKBACK = 3600
 CRYPTO_WALLET_MIN_USD = 10.0
 CRYPTO_ACTIVE_WINDOW = 24 * 3600
+MAX_CRYPTO_REPLACEMENTS_PER_RUN = 100
 # Most recent four BTC/ETH/SOL/XRP 5m windows and two 15m windows.
 CRYPTO_WINDOWS = (("5m", 300, 4), ("15m", 900, 2))
 CRYPTO_ASSETS = ("btc", "eth", "sol", "xrp")
@@ -220,11 +221,36 @@ def incorporate_sample(state, observations, now):
                     key=lambda kv: (-int(kv[1].get("crypto_last_buy") or 0),
                                     -kv[1]["markets"], -kv[1]["mid_buys"],
                                     -kv[1]["rows"], kv[0]))
-    added = 0
+    added = replaced = 0
+    eviction_candidates = None
     for wallet, sample in ranked:
         if wallet not in wallets:
             if len(wallets) >= TARGET:
-                continue
+                # When the universe is full, *never* permanently freeze out
+                # fresh crypto specialists. Replace only unknown/low-quality
+                # stale generic entries, not proven qualified wallets.
+                active_crypto = (0 <= now-int(sample.get("crypto_last_buy") or 0)
+                                 <= CRYPTO_LOOKBACK)
+                if not active_crypto or replaced >= MAX_CRYPTO_REPLACEMENTS_PER_RUN:
+                    continue
+                if eviction_candidates is None:
+                    eviction_candidates = sorted((
+                        (int(m.get("last_market_seen") or 0),
+                         int(m.get("mid_buys_sampled") or 0),
+                         bool(m.get("score_checked_at")), addr)
+                        for addr, m in wallets.items()
+                        if (not (0 <= now-int(m.get("crypto_last_buy") or 0)
+                                 <= CRYPTO_ACTIVE_WINDOW) and not (
+                            api.asfloat(m.get("n")) >= 30 and
+                            api.asfloat(m.get("winrate")) >= .70 and
+                            api.asfloat(m.get("recent_realized_pnl")) >= 100 and
+                            isinstance(m.get("profit_factor"), (int, float)) and
+                            m["profit_factor"] >= 1.15)))
+                if not eviction_candidates:
+                    continue
+                _, _, _, evicted = eviction_candidates.pop(0)
+                del wallets[evicted]
+                replaced += 1
             wallets[wallet] = {"source": "v33_public_market_trades",
                                "first_seen": now}
             added += 1
@@ -238,6 +264,7 @@ def incorporate_sample(state, observations, now):
             item[key + "_sampled"] = min(100000, int(item.get(key + "_sampled", 0))
                                                   + sample[key])
         item["recent_sampled_markets"] = sample["markets"]
+    state["last_crypto_replaced"] = replaced
     return added
 
 
@@ -259,7 +286,9 @@ def due_for_scoring(wallets, now):
 def score_universe(state, now):
     todo = due_for_scoring(state["wallets"], now)
     success = errors = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+    # Limit background score pressure on shared public API; 429s also
+    # reduce the quality of the active live wallet monitor.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         futures = {pool.submit(api.closed_stats, addr): addr for addr in todo}
         for future in concurrent.futures.as_completed(futures):
             address = futures[future]
@@ -368,7 +397,8 @@ def main():
     state["updated_at"] = now
     state["last_run"] = {
         "candidates_before": before, "candidates_now": len(state["wallets"]),
-        "added": added, "target": TARGET, "gamma_markets": pool_size,
+        "added": added, "crypto_replacements": state.get("last_crypto_replaced", 0),
+        "target": TARGET, "gamma_markets": pool_size,
         "markets_sampled": len(selected), "market_queries_ok": market_success,
         "gamma_errors": gamma_errors, "crypto_gamma_errors": crypto_gamma_errors,
         "crypto_markets_sampled": len(crypto_markets),
