@@ -727,5 +727,55 @@ class BotTests(unittest.TestCase):
                              "recent_negative_expectancy_sample")
 
 
+    def test_opposing_wallets_trigger_deduped_explicit_conflict_warning(self):
+        rival = "0x" + "c"*40
+        first = trade()
+        second = dict(trade(outcome="No"), proxy_wallet=rival,
+                      token_id="5678", transaction_hash="rival-trade")
+        state = bot.blank_state()
+        self.assertTrue(bot.add_fill(state, first, NOW))
+        self.assertTrue(bot.add_fill(state, second, NOW))
+        chosen = {W: {"name": "A", "winrate": .8},
+                  rival: {"name": "B", "winrate": .8}}
+        with mock.patch.object(bot, "political_market_reason",
+                               return_value=None), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            self.assertEqual(bot.notify_opposing_wallets(state, chosen, NOW), 1)
+            self.assertEqual(bot.notify_opposing_wallets(state, chosen, NOW+30), 0)
+        self.assertEqual(sender.call_count, 1)
+        warning = sender.call_args.args[0]
+        self.assertIn("КОНФЛИКТ", warning)
+        self.assertIn("НЕ подтверждены", warning)
+        self.assertIn("\n", warning)
+        self.assertEqual(state["counters"]["conflict_alerts_sent"], 1)
+        self.assertNotIn("alerts_sent", state["counters"])
+
+    def test_same_outcome_different_wallets_do_not_raise_conflict(self):
+        rival = "0x" + "c"*40
+        state = bot.blank_state()
+        bot.add_fill(state, trade(), NOW)
+        bot.add_fill(state, dict(trade(), proxy_wallet=rival,
+                                 transaction_hash="other-hash"), NOW)
+        selected = {W: {}, rival: {}}
+        with mock.patch.object(bot.v2, "send_telegram") as sender:
+            self.assertEqual(bot.notify_opposing_wallets(
+                state, selected, NOW), 0)
+        sender.assert_not_called()
+
+    def test_political_conflict_is_not_announced(self):
+        rival = "0x" + "c"*40
+        state = bot.blank_state()
+        bot.add_fill(state, trade(), NOW)
+        bot.add_fill(state, dict(trade(outcome="No"), proxy_wallet=rival,
+                                 token_id="other", transaction_hash="different"), NOW)
+        with mock.patch.object(bot, "political_market_reason",
+                               return_value="political_market"), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            self.assertEqual(bot.notify_opposing_wallets(
+                state, {W: {}, rival: {}}, NOW), 0)
+        sender.assert_not_called()
+
+
+
 if __name__ == "__main__":
     unittest.main()
