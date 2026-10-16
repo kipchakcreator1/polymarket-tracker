@@ -827,7 +827,7 @@ def deliver(state, selected, now, *, clock=None):
         state["sent"][dedupe] = send_at
         if isinstance(receipt, int) and receipt > 0:
             state["last_telegram_acceptance"] = {
-                "at": send_at, "message_id": receipt,
+                "at": send_at, "message_id": receipt, "kind": "buy",
                 "note": "API accepted; client push/display is not verified"}
             print("V33 TELEGRAM ACCEPTED message_id=", receipt)
         mark(state, "alerts_sent")
@@ -846,13 +846,18 @@ def send_quiet_status(state, now, fresh_fills, watching):
             now - last_status < QUIET_STATUS_INTERVAL):
         return False
     minutes = max(0, (now - last_signal) // 60)
-    v2.send_telegram(
+    receipt = v2.send_telegram(
         "\U0001f6f0 <b>v3.3 • мониторинг работает</b>\n"
         f"\U0001f50e Проверяем {watching} кошельков.\n"
         f"\U0001f9ea Новых трейдов в последней проверке: {fresh_fills}.\n"
         f"\U0001f4e8 Последний подтверждённый BUY-сигнал: {minutes} мин назад.\n"
         "\u26a0\ufe0f Подходящих по фильтрам трейдов пока нет. "
         "Это статус, не сигнал к трейду.")
+    if isinstance(receipt, int) and receipt > 0:
+        state["last_telegram_acceptance"] = {
+            "at": now, "message_id": receipt, "kind": "status",
+            "note": "API accepted; client push/display is not verified"}
+        print("V33 HEARTBEAT TELEGRAM ACCEPTED message_id=", receipt)
     state["last_quiet_status_at"] = now
     mark(state, "quiet_status_sent")
     return True
