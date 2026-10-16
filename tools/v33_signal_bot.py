@@ -127,7 +127,8 @@ def select_wallets(shortlist, now):
         selected[wallet] = {"name": str(meta.get("name") or "")[:60],
                             "winrate": v2.asfloat(meta["profitable_closed_rate"]),
                             "profit_factor": v2.asfloat(meta["profit_factor"]),
-                            "price_profile": meta.get("price_profile")}
+                            "price_profile": meta.get("price_profile"),
+                            "last_crypto_buy": int(meta.get("last_crypto_buy") or 0)}
     if not selected:
         raise RuntimeError("No qualified wallets")
     return selected
@@ -1054,6 +1055,9 @@ def main():
                          "watching": len(selected), "priority_watching":
                          sum(w in selected for w in PRIORITY_WALLETS),
                          "new_fills": fills,
+                         "crypto_recent_watching": sum(
+                             0 <= now-int(meta.get("last_crypto_buy") or 0) <= 86400
+                             for meta in selected.values()),
                          "initial_wallets": baseline, "alerts": sent,
                          "conflict_alerts": conflicts,
                          "request_errors": failures, "poll_gaps": gaps,
