@@ -149,6 +149,19 @@ class BotTests(unittest.TestCase):
             self.assertEqual(sorted([fast, selected], key=bot.signal_sort_key)[0], selected)
 
 
+    def test_sports_buy_precedes_priority_btc_in_sports_first_mode(self):
+        sport = ("sport", {"wallet": W, "last": NOW-10,
+                 "title": "Lakers vs Celtics - Moneyline",
+                 "url": "https://polymarket.com/event/nba-lal-bos-2026"})
+        btc_wallet = "0x" + "c"*40
+        btc = ("btc", {"wallet": btc_wallet, "last": NOW,
+               "title": "Bitcoin Up or Down",
+               "url": "https://polymarket.com/event/btc-updown-5m-1792056900"})
+        with mock.patch.object(bot, "MARKET_FOCUS", "sports_btc"), \
+             mock.patch.object(bot, "PRIORITY_WALLETS", frozenset([btc_wallet])):
+            # Sport outranks even a newer requested BTC trade when capped.
+            self.assertEqual(sorted([btc, sport], key=bot.signal_sort_key)[0], sport)
+
     def test_seven_recent_losses_are_blocked(self):
         rows = [{"realizedPnl": -2}] * 7 + [{"realizedPnl": 5}] * 13
         result = bot.recent_form(rows)
@@ -1065,6 +1078,56 @@ class BotTests(unittest.TestCase):
             self.assertIsNone(bot.market_focus_reason(state, group, now))
             self.assertIsNone(bot.market_focus_reason(state, group, now+180))
         api.assert_called_once()
+
+    def test_sports_and_btc_buy_counters_are_only_incremented_after_send(self):
+        import datetime
+        now = 1792137600
+        sports = bot.blank_state()
+        row = trade(price=.5, timestamp=now)
+        row.update(title="Lakers vs Celtics - Moneyline",
+                   event_slug="nba-lal-bos-2026")
+        bot.add_fill(sports, row, now)
+        kickoff = datetime.datetime.fromtimestamp(
+            now+3600, datetime.timezone.utc).isoformat()
+        market = {"conditionId": COND, "sportsMarketType": "moneyline",
+                  "gameStartTime": kickoff}
+        mocks = {
+            "check_trade": ({"price": .51, "best_ask": .51}, None),
+            "recent_form_reason": None,
+            "active_form_reason": None,
+            "political_market_reason": None,
+        }
+        with mock.patch.object(bot, "MARKET_FOCUS", "sports_btc"), \
+             mock.patch.object(bot.v2, "request_json", return_value=[market]), \
+             mock.patch.object(bot, "check_trade", return_value=mocks["check_trade"]), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
+             mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot.v2, "send_telegram", return_value=987):
+            self.assertEqual(bot.deliver(sports, {
+                W: {"name": "", "winrate": .8}}, now), 1)
+        self.assertEqual(sports["counters"]["alerts_sent"], 1)
+        self.assertEqual(sports["counters"]["alerts_sports"], 1)
+        self.assertNotIn("alerts_btc", sports["counters"])
+
+        start = 1792056900
+        when = start + 30
+        btc = bot.blank_state()
+        btc_row = trade(price=.5, timestamp=when)
+        btc_row.update(title="Bitcoin Up or Down",
+                       event_slug=f"btc-updown-5m-{start}")
+        bot.add_fill(btc, btc_row, when)
+        with mock.patch.object(bot, "MARKET_FOCUS", "sports_btc"), \
+             mock.patch.object(bot, "check_trade", return_value=(
+                 {"price": .5, "best_ask": .5}, None)), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
+             mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot.v2, "send_telegram", return_value=988):
+            self.assertEqual(bot.deliver(btc, {
+                W: {"name": "", "winrate": .8}}, when), 1)
+        self.assertEqual(btc["counters"]["alerts_btc"], 1)
+        self.assertNotIn("alerts_sports", btc["counters"])
 
     def test_sports_btc_mode_allows_inplay_even_if_enddate_was_kickoff(self):
         import datetime
