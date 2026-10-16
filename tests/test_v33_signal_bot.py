@@ -777,5 +777,47 @@ class BotTests(unittest.TestCase):
 
 
 
+    def test_consecutive_small_buys_sum_to_one_qualified_signal(self):
+        state = bot.blank_state()
+        first = trade(price=.5, timestamp=NOW)
+        first["size"] = 40  # $20
+        second = trade(price=.5, timestamp=NOW+40)
+        second.update(size=44, transaction_hash="new-buy")  # $22
+        chosen = {W: {"name": "", "winrate": .8}}
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade",
+                               return_value=({"price": .5}, None)), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            self.assertTrue(bot.add_fill(state, first, NOW))
+            self.assertEqual(bot.deliver(state, chosen, NOW), 0)
+            self.assertEqual(len(state["pending"]), 1)
+            self.assertTrue(bot.add_fill(state, second, NOW+40))
+            self.assertEqual(bot.deliver(state, chosen, NOW+40), 1)
+        self.assertEqual(sender.call_count, 1)
+        self.assertAlmostEqual(state["counters"]["alerts_sent"], 1)
+        sender.assert_called_once()
+        self.assertIn("$42", sender.call_args.args[0])
+
+    def test_old_subthreshold_fills_expire_and_never_combine_late(self):
+        state = bot.blank_state()
+        first = trade(price=.5, timestamp=NOW)
+        first["size"] = 40  # $20
+        later = trade(price=.5, timestamp=NOW+240)
+        later.update(size=40, transaction_hash="after-window")
+        bot.add_fill(state, first, NOW)
+        self.assertEqual(bot.deliver(
+            state, {W: {"name": "", "winrate": .8}}, NOW), 0)
+        bot.add_fill(state, later, NOW+240)
+        group = next(iter(state["pending"].values()))
+        self.assertEqual(group["first"], NOW+240)
+        self.assertEqual(len(state["seen"]), 2)
+        cand, why = bot.candidate(group, NOW+240)
+        self.assertEqual(why, "small_trade")
+        self.assertIsNone(cand)
+
+
+
 if __name__ == "__main__":
     unittest.main()
