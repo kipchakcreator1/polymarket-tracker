@@ -434,6 +434,43 @@ class BotTests(unittest.TestCase):
         self.assertEqual(req.call_count, 2)
         self.assertEqual(req.call_args[0][0], "/v2/positions")
 
+    def test_active_pagination_beyond_five_pages_can_finish_safely(self):
+        pages = [
+            {"data": [], "pagination": {
+                "has_more": i < 6,
+                "next_cursor": f"page-{i+1}" if i < 6 else None}}
+            for i in range(7)
+        ]
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=pages) as req:
+            self.assertEqual(bot.fetch_open_positions(W), [])
+        self.assertEqual(req.call_count, 7)
+
+    def test_active_pagination_still_fails_closed_at_new_safety_cap(self):
+        pages = [
+            {"data": [], "pagination": {
+                "has_more": True, "next_cursor": f"page-{i+1}"}}
+            for i in range(bot.ACTIVE_PAGE_CAP)
+        ]
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=pages) as req:
+            with self.assertRaisesRegex(RuntimeError,
+                                        "incomplete wallet snapshot"):
+                bot.fetch_open_positions(W)
+        self.assertEqual(req.call_count, bot.ACTIVE_PAGE_CAP)
+
+    def test_active_pagination_rejects_cursor_cycle(self):
+        pages = [
+            {"data": [], "pagination": {
+                "has_more": True, "next_cursor": "A"}},
+            {"data": [], "pagination": {
+                "has_more": True, "next_cursor": "B"}},
+            {"data": [], "pagination": {
+                "has_more": True, "next_cursor": "A"}}]
+        with mock.patch.object(bot.v2, "request_json", side_effect=pages):
+            with self.assertRaisesRegex(ValueError, "cursor invalid"):
+                bot.fetch_open_positions(W)
+
     def test_active_pagination_missing_cursor_fails_closed(self):
         bad = {"data": [], "pagination":
                {"has_more": True, "next_cursor": None}}
@@ -1058,6 +1095,27 @@ class BotTests(unittest.TestCase):
         self.assertEqual(state["counters"]["alerts_sent"], 1)
 
 
+
+    def test_sports_funnel_records_candidates_without_fake_buy(self):
+        state = bot.blank_state()
+        now = 1792137600
+        row = trade(price=.5, timestamp=now)
+        row.update(title="Lakers vs Celtics - Moneyline",
+                   event_slug="nba-lal-bos-2026")
+        bot.add_fill(state, row, now)
+        with mock.patch.object(bot, "MARKET_FOCUS", "sports_btc"), \
+             mock.patch.object(bot, "market_focus_reason", return_value=None), \
+             mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade", return_value=(
+                 None, "book_no_liquidity")), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            self.assertEqual(bot.deliver(
+                state, {W: {"name": "", "winrate": .8}}, now), 0)
+        sender.assert_not_called()
+        self.assertEqual(state["counters"]["eligible_source_buy_sports"], 1)
+        self.assertEqual(state["counters"]["book_no_liquidity"], 1)
+        self.assertNotIn("book_verified_sports", state["counters"])
+        self.assertNotIn("alerts_sports", state["counters"])
 
     def test_sports_btc_mode_accepts_official_nba_game(self):
         import datetime
