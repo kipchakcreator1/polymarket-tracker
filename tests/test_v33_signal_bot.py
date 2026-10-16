@@ -876,5 +876,62 @@ class BotTests(unittest.TestCase):
 
 
 
+    def test_main_two_real_polls_persist_partial_buy_then_alert(self):
+        """Full pipeline: poll -> checkpoint -> next poll -> real BUY route."""
+        import json
+        import tempfile
+        from pathlib import Path
+        wallet_meta = {"wallet": W, "closed": 100,
+                       "profitable_closed_rate": .81,
+                       "realized_closed_pnl": 1200,
+                       "profit_factor": 2.2, "name": ""}
+        a = trade(price=.5, timestamp=NOW)
+        a["size"] = 40  # $20
+        b = trade(price=.5, timestamp=NOW+45)
+        b.update(size=44, transaction_hash="second-fill")
+        with tempfile.TemporaryDirectory() as d:
+            shortlist = Path(d) / "shortlist.json"
+            state_file = Path(d) / "state.json"
+            shortlist.write_text(json.dumps({
+                "schema": "v33_wallet_shortlist_1", "observed_at": NOW,
+                "candidate_count": 1, "shortlist": [wallet_meta]}))
+            env = {"TELEGRAM_V31_BOT_TOKEN": "old1",
+                   "TELEGRAM_V32_BOT_TOKEN": "old2",
+                   "TELEGRAM_V33_BOT_TOKEN": "new3",
+                   "TELEGRAM_CHAT_ID": "12345678"}
+            with mock.patch.object(bot, "SHORTLIST", shortlist), \
+                 mock.patch.object(bot, "STATE", state_file), \
+                 mock.patch.dict(bot.os.environ, env), \
+                 mock.patch.object(bot.v32, "get_wallet_trades",
+                                   side_effect=[[a], [b]]) as fetch, \
+                 mock.patch.object(bot, "political_market_reason",
+                                   return_value=None), \
+                 mock.patch.object(bot, "check_trade",
+                                   return_value=({"price": .51}, None)), \
+                 mock.patch.object(bot, "recent_form_reason",
+                                   return_value=None), \
+                 mock.patch.object(bot, "active_form_reason",
+                                   return_value=None), \
+                 mock.patch.object(bot.v2, "send_telegram",
+                                   return_value=4321) as send:
+                with mock.patch.object(bot.time, "time", return_value=NOW):
+                    bot.main()
+                checkpoint = json.loads(state_file.read_text())
+                self.assertEqual(checkpoint["counters"].get("alerts_sent", 0), 0)
+                self.assertEqual(len(checkpoint["pending"]), 1)
+                with mock.patch.object(bot.time, "time",
+                                       return_value=NOW+45):
+                    bot.main()
+                saved = json.loads(state_file.read_text())
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(send.call_count, 2)  # one boot + one genuine BUY
+        self.assertEqual(saved["counters"]["alerts_sent"], 1)
+        self.assertEqual(saved["last_telegram_acceptance"]["message_id"], 4321)
+        self.assertEqual(saved["last_telegram_acceptance"]["kind"], "buy")
+        self.assertEqual(saved["pending"], {})
+        self.assertEqual(saved["last_run"]["alerts"], 1)
+
+
+
 if __name__ == "__main__":
     unittest.main()
