@@ -60,8 +60,10 @@ jobs:
             git pull --rebase origin kalshi-99c-paper
             git push origin HEAD:kalshi-99c-paper
           fi
-      - name: Notify via existing Tracker 3.2 Telegram bot (paper data ONLY)
-        if: success()
+      # v3.2 Telegram was paused at the user's request. Keep the separate
+      # read-only Kalshi study, but do not wake the paused Telegram bot.
+      - name: Skip v3.2 Telegram paper notifications (paused)
+        if: ${{ false }}
         env:
           TELEGRAM_V31_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_V32_BOT_TOKEN: ${{ secrets.TELEGRAM_V32_BOT_TOKEN }}
