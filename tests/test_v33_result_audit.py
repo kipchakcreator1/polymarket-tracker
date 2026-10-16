@@ -75,6 +75,52 @@ class TruthTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 a.fetch_wallet_trades(W)
 
+    def test_closed_profitable_position_can_be_wrong_sports_prediction(self):
+        closed={"proxy_wallet":W,"condition_id":C,"token_id":"yes",
+                "status":"CLOSED","first_entry_at":1791900000,
+                "realized_pnl":25}
+        with mock.patch.object(a,"fetch_position_history",
+                               return_value=([closed],True)), \
+             mock.patch.object(a,"classify",
+                               return_value=("loss",1792000000)):
+            sample=a.position_truth_sample(W,{}, {})
+        self.assertEqual(sample["losses"],1)
+        self.assertEqual(sample["profitable_closed_wrong_direction"],1)
+        self.assertFalse(sample["certified_sample"])
+
+    def test_unredeemed_losing_sports_position_is_not_ignored(self):
+        loser={"proxy_wallet":W,"condition_id":C,"token_id":"yes",
+               "status":"REDEEMABLE","first_entry_at":1791900000,
+               "realized_pnl":0}
+        with mock.patch.object(a,"fetch_position_history",
+                               return_value=([loser],True)), \
+             mock.patch.object(a,"classify",
+                               return_value=("loss",1792000000)):
+            sample=a.position_truth_sample(W,{}, {})
+        self.assertEqual(sample["losses"],1)
+
+    def test_closed_and_redeemable_are_both_queried(self):
+        valid=lambda status: {"data":[],"pagination":{
+            "has_more":False,"next_cursor":None}}
+        with mock.patch.object(a.api,"request_json",
+                               side_effect=[valid("CLOSED"),valid("REDEEMABLE")]) as req:
+            rows,complete=a.fetch_position_history(W)
+        self.assertTrue(complete)
+        self.assertEqual(rows,[])
+        self.assertEqual([x.args[1]["status"] for x in req.call_args_list],
+                         ["CLOSED","REDEEMABLE"])
+
+    def test_partial_position_pages_cannot_certify_quality(self):
+        closed={"proxy_wallet":W,"condition_id":C,"token_id":"yes",
+                "status":"CLOSED","first_entry_at":1791900000}
+        with mock.patch.object(a,"fetch_position_history",
+                               return_value=([closed],False)), \
+             mock.patch.object(a,"classify",
+                               return_value=("win",1792000000)):
+            value=a.position_truth_sample(W,{}, {})
+        self.assertFalse(value["certified_sample"])
+        self.assertFalse(value["position_history_complete"])
+
     def test_forward_paper_hold_requires_recorded_ask(self):
         key=W+"|"+C+"|yes"
         prior=[{"wallet":W,"condition":C,"token_id":"yes",
