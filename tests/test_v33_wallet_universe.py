@@ -112,7 +112,7 @@ class UniverseTests(unittest.TestCase):
         with mock.patch.object(v33.api, "request_json", side_effect=api):
             markets, errors = v33.discover_short_crypto_markets(now)
         self.assertEqual(errors, 0)
-        self.assertEqual(len(queried), 24)
+        self.assertEqual(len(queried), 6)
         self.assertEqual(len(markets), 1)
         self.assertTrue(markets[0]["crypto_short"])
         self.assertEqual(markets[0]["condition"], condition)
