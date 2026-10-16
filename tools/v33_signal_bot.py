@@ -148,7 +148,7 @@ def blank_state():
     return {"version": VERSION, "cursors": {}, "seen": {},
             "pending": {}, "sent": {}, "counters": {},
             "recent_form_cache": {}, "active_form_cache": {}, "politics_cache": {},
-            "market_focus_cache": {},
+            "market_focus_cache": {}, "signal_evidence": {},
             "conflicting_markets": {}, "conflict_alerts": {},
             "boot_notified": False}
 
@@ -174,6 +174,8 @@ def load_state():
         raise ValueError("Corrupted v3.3 conflict cache")
     if not isinstance(value.setdefault("conflict_alerts", {}), dict):
         raise ValueError("Corrupted v3.3 conflict alerts")
+    if not isinstance(value.setdefault("signal_evidence", {}), dict):
+        raise ValueError("Corrupted v3.3 signal evidence")
     return value
 
 
@@ -1034,6 +1036,19 @@ def deliver(state, selected, now, *, clock=None):
                 "note": "API accepted; client push/display is not verified"}
             print("V33 TELEGRAM ACCEPTED message_id=", receipt)
         mark(state, "alerts_sent")
+        # Prospective paper-only evidence: the $5 executable ask was checked
+        # when alerting, but no order was placed and no fill is assumed.
+        # Historical alerts before this change have no trustworthy copy price.
+        state.setdefault("signal_evidence", {})[dedupe] = {
+            "wallet": group["wallet"], "condition": group["condition"],
+            "token_id": cand["token"], "source_trade_at": group["last"],
+            "alert_at": send_at, "source_price": cand["source"],
+            "source_buy_usd": cand["usd"],
+            "hypothetical_copy_ask": quote["price"],
+            "hypothetical_copy_stake_usd": QUOTE_STAKE,
+            "topic": "btc" if is_btc_market(group) else "sports",
+            "note": "read-only book simulation; NOT a filled order",
+        }
         # Count genuine server-accepted alerts by topic from this deployment
         # onward; older historical BUY sends did not carry topic metadata.
         if MARKET_FOCUS == "sports_btc":
@@ -1131,6 +1146,10 @@ def main():
                      if v >= now - 3 * 3600}
     state["sent"] = {k: v for k, v in state["sent"].items()
                      if v >= now - 7 * 86400}
+    state["signal_evidence"] = {
+        k: v for k, v in state.get("signal_evidence", {}).items()
+        if isinstance(v, dict) and
+        0 <= now-int(v.get("alert_at") or 0) <= 45 * 86400}
     state["pending"] = {k: v for k, v in state["pending"].items()
                         if now - int(v["last"]) <= MAX_AGE}
     state["cursors"] = {k: v for k, v in state["cursors"].items()
