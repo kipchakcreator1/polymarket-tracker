@@ -817,7 +817,7 @@ def deliver(state, selected, now, *, clock=None):
         try:
             recent = state.get("recent_form_cache", {}).get(group["wallet"])
             active = state.get("active_form_cache", {}).get(group["wallet"])
-            v2.send_telegram(message(group, selected[group["wallet"]],
+            receipt = v2.send_telegram(message(group, selected[group["wallet"]],
                                      cand, quote, send_at, recent=recent,
                                      active=active))
         except Exception as exc:
@@ -825,6 +825,11 @@ def deliver(state, selected, now, *, clock=None):
             print("V33 TELEGRAM WARNING:", type(exc).__name__, str(exc)[:100])
             continue  # unsent pending trade remains available for retry
         state["sent"][dedupe] = send_at
+        if isinstance(receipt, int) and receipt > 0:
+            state["last_telegram_acceptance"] = {
+                "at": send_at, "message_id": receipt,
+                "note": "API accepted; client push/display is not verified"}
+            print("V33 TELEGRAM ACCEPTED message_id=", receipt)
         mark(state, "alerts_sent")
         del state["pending"][key]
         sent += 1
