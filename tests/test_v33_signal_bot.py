@@ -919,6 +919,8 @@ class BotTests(unittest.TestCase):
                                    return_value=None), \
                  mock.patch.object(bot, "active_form_reason",
                                    return_value=None), \
+                 mock.patch.object(bot, "notify_opposing_wallets",
+                                   side_effect=AssertionError("conflict Telegram must be muted")) as conflict_notifier, \
                  mock.patch.object(bot.v2, "send_telegram",
                                    return_value=4321) as send:
                 with mock.patch.object(bot.time, "time", return_value=NOW):
@@ -931,6 +933,7 @@ class BotTests(unittest.TestCase):
                     bot.main()
                 saved = json.loads(state_file.read_text())
         self.assertEqual(fetch.call_count, 2)
+        conflict_notifier.assert_not_called()
         self.assertEqual(send.call_count, 2)  # one boot + one genuine BUY
         self.assertEqual(saved["counters"]["alerts_sent"], 1)
         self.assertEqual(saved["last_telegram_acceptance"]["message_id"], 4321)
@@ -1129,6 +1132,25 @@ class BotTests(unittest.TestCase):
                 {"realizedPnl": -2}] + [{"realizedPnl": 5}] * 15
         with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
             self.assertIsNone(bot.recent_form_reason(bot.blank_state(), W, NOW))
+
+
+    def test_conflict_risk_veto_survives_muting_telegram_notices(self):
+        rival = "0x" + "c" * 40
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.5), NOW)
+        bot.add_fill(state, dict(trade(price=.5, outcome="No"),
+                                 proxy_wallet=rival, token_id="other-token",
+                                 transaction_hash="distinct-rival"), NOW)
+        group = next(x for x in state["pending"].values()
+                     if x["wallet"] == W)
+        cand, reason = bot.candidate(group, NOW)
+        self.assertIsNone(reason)
+        with mock.patch.object(bot, "CONFLICT_TELEGRAM_ENABLED", False), \
+             mock.patch.object(bot.v2, "send_telegram") as send:
+            self.assertTrue(bot.conflicting_wallet_signal(
+                state, group, cand, NOW))
+        send.assert_not_called()
+        self.assertIn(COND, state["conflicting_markets"])
 
 
 if __name__ == "__main__":
