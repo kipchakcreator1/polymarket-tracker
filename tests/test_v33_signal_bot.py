@@ -18,6 +18,13 @@ def trade(price=.6, timestamp=NOW, side="BUY", outcome="Yes"):
 
 
 class BotTests(unittest.TestCase):
+    def setUp(self):
+        # Legacy risk-gate tests probe generic markets; the live focus is
+        # separately exercised under its actual crypto_short configuration.
+        focus = mock.patch.object(bot, "MARKET_FOCUS", "all")
+        focus.start()
+        self.addCleanup(focus.stop)
+
     def test_secret_validation_keeps_distinct_tokens(self):
         with self.assertRaises(ValueError):
             bot.validate_route({"TELEGRAM_V33_BOT_TOKEN": "abc",
@@ -930,6 +937,109 @@ class BotTests(unittest.TestCase):
         self.assertEqual(saved["last_telegram_acceptance"]["kind"], "buy")
         self.assertEqual(saved["pending"], {})
         self.assertEqual(saved["last_run"]["alerts"], 1)
+
+
+
+    def test_live_crypto_focus_blocks_spiderman_before_api_or_telegram(self):
+        state = bot.blank_state()
+        row = trade(price=.5)
+        row["title"] = "Will Spider-Man 5 release in 2029?"
+        row["event_slug"] = "will-spiderman-5-release-in-2029"
+        self.assertTrue(bot.add_fill(state, row, NOW))
+        group = next(iter(state["pending"].values()))
+        with mock.patch.object(bot, "MARKET_FOCUS", "crypto_short"), \
+             mock.patch.object(bot.v2, "request_json") as api, \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            self.assertEqual(bot.market_focus_reason(state, group, NOW),
+                             "off_topic_market")
+            self.assertEqual(bot.deliver(state, {W: {"name": "", "winrate": .8}},
+                                         NOW), 0)
+        api.assert_not_called()
+        sender.assert_not_called()
+        self.assertEqual(state["counters"]["off_topic_market"], 1)
+
+    def test_live_crypto_focus_admits_fresh_btc_5m_and_15m(self):
+        from unittest import mock
+        start = 1792056900
+        for period in ("5m", "15m"):
+            row = trade(price=.5, timestamp=start+30)
+            row["title"] = "Bitcoin Up or Down"
+            row["event_slug"] = f"btc-updown-{period}-{start}"
+            state = bot.blank_state()
+            self.assertTrue(bot.add_fill(state, row, start+30))
+            group = next(iter(state["pending"].values()))
+            with mock.patch.object(bot, "MARKET_FOCUS", "crypto_short"), \
+                 mock.patch.object(bot.v2, "request_json") as api:
+                self.assertIsNone(bot.market_focus_reason(state, group,
+                                                           start+30))
+                self.assertEqual(bot.market_focus_reason(
+                    state, group, start+(300 if period == "5m" else 900)-40),
+                    "crypto_market_too_late")
+            api.assert_not_called()
+
+    def test_live_crypto_focus_excludes_far_future_bitcoin_market(self):
+        import datetime
+        now = 1792137600
+        state = bot.blank_state()
+        row = trade(price=.5, timestamp=now)
+        row["title"] = "Will Bitcoin hit $300,000 by 2029?"
+        self.assertTrue(bot.add_fill(state, row, now))
+        group = next(iter(state["pending"].values()))
+        response = [{"conditionId": COND,
+                     "endDate": datetime.datetime.fromtimestamp(
+                         now+365*86400, datetime.timezone.utc).isoformat()}]
+        with mock.patch.object(bot, "MARKET_FOCUS", "crypto_short"), \
+             mock.patch.object(bot.v2, "request_json", return_value=response):
+            self.assertEqual(bot.market_focus_reason(state, group, now),
+                             "crypto_market_too_far")
+
+    def test_live_crypto_focus_allows_verified_intraday_btc(self):
+        import datetime
+        now = 1792137600
+        state = bot.blank_state()
+        row = trade(price=.5, timestamp=now)
+        row["title"] = "Will Bitcoin be above $69k today?"
+        self.assertTrue(bot.add_fill(state, row, now))
+        group = next(iter(state["pending"].values()))
+        response = [{"conditionId": COND,
+                     "endDate": datetime.datetime.fromtimestamp(
+                         now+3600, datetime.timezone.utc).isoformat()}]
+        with mock.patch.object(bot, "MARKET_FOCUS", "crypto_short"), \
+             mock.patch.object(bot.v2, "request_json", return_value=response) as api:
+            self.assertIsNone(bot.market_focus_reason(state, group, now))
+            self.assertIsNone(bot.market_focus_reason(state, group, now+200))
+        api.assert_called_once()  # cached Gamma market horizon
+
+    def test_live_crypto_focus_fails_closed_if_market_end_missing(self):
+        now = 1792137600
+        state = bot.blank_state()
+        row = trade(price=.5, timestamp=now)
+        row["title"] = "Will Ethereum exceed $5,000 today?"
+        bot.add_fill(state, row, now)
+        group = next(iter(state["pending"].values()))
+        with mock.patch.object(bot, "MARKET_FOCUS", "crypto_short"), \
+             mock.patch.object(bot.v2, "request_json",
+                               return_value=[{"conditionId": COND}]):
+            self.assertEqual(bot.market_focus_reason(state, group, now),
+                             "market_end_unverified")
+
+    def test_live_crypto_focus_btc_5m_full_delivery(self):
+        start = 1792056900
+        now = start+30
+        state = bot.blank_state()
+        row = trade(price=.5, timestamp=now)
+        row.update(title="Bitcoin Up or Down", event_slug=f"btc-updown-5m-{start}")
+        bot.add_fill(state, row, now)
+        with mock.patch.object(bot, "MARKET_FOCUS", "crypto_short"), \
+             mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade",
+                               return_value=({"price": .5}, None)), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
+             mock.patch.object(bot.v2, "send_telegram", return_value=1234):
+            self.assertEqual(bot.deliver(state, {
+                W: {"name": "", "winrate": .8}}, now), 1)
+        self.assertEqual(state["counters"]["alerts_sent"], 1)
 
 
 
