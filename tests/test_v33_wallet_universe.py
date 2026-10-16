@@ -174,5 +174,48 @@ class UniverseTests(unittest.TestCase):
 
 
 
+    def test_full_universe_admits_new_crypto_without_evicting_good_wallet(self):
+        now = 1792145000
+        good = {"n": 100, "winrate": .8, "profit_factor": 2,
+                "recent_realized_pnl": 200,
+                "score_checked_at": now-1200,
+                "last_market_seen": now-1200}
+        weak = {"last_market_seen": now-4000,
+                "score_checked_at": 0, "mid_buys_sampled": 1}
+        state = {"wallets": {A: good, B: weak}}
+        new = {C: {"markets": 1, "rows": 1, "mid_buys": 1,
+                   "expensive_buys": 0, "buy_rows": 1,
+                   "crypto_last_buy": now-30}}
+        with mock.patch.object(v33, "TARGET", 2):
+            n = v33.incorporate_sample(state, new, now)
+        self.assertEqual(n, 1)
+        self.assertEqual(set(state["wallets"]), {A, C})
+        self.assertEqual(state["last_crypto_replaced"], 1)
+        self.assertEqual(len(state["wallets"]), 2)
+
+    def test_full_universe_does_not_evict_for_generic_market_trader(self):
+        now = 1792145000
+        state = {"wallets": {A: {"last_market_seen": now-4000}}}
+        new = {B: {"markets": 1, "rows": 1, "mid_buys": 1,
+                   "expensive_buys": 0, "buy_rows": 1,
+                   "crypto_last_buy": 0}}
+        with mock.patch.object(v33, "TARGET", 1):
+            n = v33.incorporate_sample(state, new, now)
+        self.assertEqual(n, 0)
+        self.assertEqual(set(state["wallets"]), {A})
+        self.assertEqual(state["last_crypto_replaced"], 0)
+
+    def test_full_universe_protects_recent_crypto_wallets(self):
+        now = 1792145000
+        state = {"wallets": {A: {"crypto_last_buy": now-300}}}
+        new = {B: {"markets": 1, "rows": 1, "mid_buys": 1,
+                   "expensive_buys": 0, "buy_rows": 1,
+                   "crypto_last_buy": now-5}}
+        with mock.patch.object(v33, "TARGET", 1):
+            n = v33.incorporate_sample(state, new, now)
+        self.assertEqual(n, 0)
+        self.assertEqual(set(state["wallets"]), {A})
+
+
 if __name__ == "__main__":
     unittest.main()
