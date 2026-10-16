@@ -217,5 +217,60 @@ class UniverseTests(unittest.TestCase):
         self.assertEqual(set(state["wallets"]), {A})
 
 
+    def test_official_sports_tag_discovers_nearby_game_markets(self):
+        import datetime
+        now = 1792145000
+        cond = "0x" + "d" * 64
+        at = datetime.datetime.fromtimestamp(
+            now+3600, datetime.timezone.utc).isoformat()
+        def fake_api(path, params=None, **kwargs):
+            if path == "/sports":
+                return [{"sport": "nba", "tags": "12345"},
+                        {"sport": "politics", "tags": "9999"}]
+            self.assertEqual(path, "/events")
+            self.assertEqual(params["tag_id"], "12345")
+            return [{"markets": [{"conditionId": cond,
+                                  "sportsMarketType": "moneyline",
+                                  "gameStartTime": at, "active": True,
+                                  "closed": False}]}]
+        with mock.patch.object(v33.api, "request_json", side_effect=fake_api) as req:
+            markets, errors = v33.discover_sports_markets(now)
+        self.assertEqual(errors, 0)
+        self.assertEqual(len(markets), 1)
+        self.assertEqual(markets[0]["condition"], cond)
+        self.assertTrue(markets[0]["sports_short"])
+        self.assertEqual(req.call_count, 2)
+
+    def test_sports_recent_trader_ranks_ahead_of_btc_and_general(self):
+        now = 1792145000
+        base = {"n": 100, "winrate": .8, "profit_factor": 2,
+                "recent_realized_pnl": 200, "score_checked_at": now,
+                "buy_rows_sampled": 20, "mid_buys_sampled": 18,
+                "expensive_buys_sampled": 0}
+        generic = dict(base, mid_buys_sampled=20000)
+        bitcoin = dict(base, crypto_last_buy=now-25)
+        sports = dict(base, sports_last_buy=now-25)
+        shortlist, n = v33.eligible_research_wallets(
+            {A: generic, B: bitcoin, C: sports}, now, limit=3)
+        self.assertEqual([m["wallet"] for m in shortlist], [C, B, A])
+        self.assertEqual(shortlist[0]["last_sports_buy"], now-25)
+
+    def test_sports_fill_requires_recent_real_buy_not_dust(self):
+        now = 1792145000
+        cond = "0x" + "d" * 64
+        p = {"data": [
+            {"condition_id": cond, "proxy_wallet": A, "side": "BUY",
+             "price": .5, "size": 30, "timestamp": now-100},
+            {"condition_id": cond, "proxy_wallet": B, "side": "BUY",
+             "price": .5, "size": 2, "timestamp": now-100}]}
+        with mock.patch.object(v33.api, "request_json", return_value=p):
+            n, d = v33.fetch_market_trades(
+                {"condition": cond, "sports_short": True}, now)
+        self.assertEqual(n, 2)
+        self.assertEqual(d[A]["sports_last_buy"], now-100)
+        self.assertEqual(d[B]["sports_last_buy"], 0)
+
+
+
 if __name__ == "__main__":
     unittest.main()
