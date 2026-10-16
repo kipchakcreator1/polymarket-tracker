@@ -55,6 +55,14 @@ CRYPTO_NAME_RE = re.compile(r"(?<![a-z0-9])(?:bitcoin|btc|ethereum|eth|solana|so
 CRYPTO_UPDOWN_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-(5m|15m|1h|4h)-(\d{10})\b", re.I)
 CRYPTO_WINDOW_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400}
 MAX_MARKET_HORIZON = 24 * 3600
+SPORTS_CATEGORY = re.compile(
+    r"^(sports?|nba|nfl|nhl|mlb|wnba|ncaa|ncaab|ncaaf|soccer|"
+    r"football|basketball|baseball|hockey|tennis|cricket|rugby|"
+    r"boxing|mma|ufc|golf|pga|f1|formula.?1|premier.?league|"
+    r"la.?liga|champions.?league|bundesliga|serie.?a|"
+    r"ligue.?1|mls|volleyball|table.?tennis|badminton)$", re.I)
+SPORTS_GAME_HORIZON = 7 * 86400
+SPORTS_INPLAY_GRACE = 8 * 3600
 MARKET_FOCUS_CACHE_SECONDS = 900
 QUIET_STATUS_ENABLED = os.getenv("V33_QUIET_STATUS_ENABLED", "0") == "1"
 MAX_AGE = 300
