@@ -1,5 +1,16 @@
 # 🐋 Polymarket Whale Tracker v2
 
+> **Actual production status (2026-10-16):** the original `tracker.yml` v3.1
+> and v3.2 Telegram schedules are PAUSED at the user's request. The active
+> experimental alert bot is **v3.3**: its schedule lives on `main` at
+> `.github/workflows/v33-telegram.yml`, while its Python implementation,
+> 250-wallet shortlist and dedupe state live on `v3.3-wallet-research`.
+> GitHub Actions scheduling is **best effort**, not guaranteed 24/7 real time.
+> Public-data BUY alerts are research only; profitability and Telegram client
+> notification display are **not guaranteed**. No paid servers or real orders.
+> The legacy v2 instructions below describe the original tracker, not v3.3.
+
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 Track large ("whale") trades on Polymarket, follow *smart money*, detect volume
