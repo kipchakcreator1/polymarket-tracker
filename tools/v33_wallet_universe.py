@@ -328,7 +328,7 @@ def incorporate_sample(state, observations, now):
                 # stale generic entries, not proven qualified wallets.
                 active_crypto = (0 <= now-int(sample.get("crypto_last_buy") or 0)
                                  <= CRYPTO_LOOKBACK)
-                if not active_crypto or replaced >= MAX_CRYPTO_REPLACEMENTS_PER_RUN:
+                if not (active_crypto or (0 <= now - int(sample.get('sports_last_buy') or 0) <= SPORTS_SAMPLE_LOOKBACK)) or replaced >= MAX_CRYPTO_REPLACEMENTS_PER_RUN:
                     continue
                 if eviction_candidates is None:
                     eviction_candidates = sorted((
