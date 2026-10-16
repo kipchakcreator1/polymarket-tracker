@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Audit-gated v3.3 live bot tests (69 scenarios)
+      - name: 'Audit-gated v3.3 live bot tests - 75 scenarios and crypto topic filter'
         env:
           PYTHONPATH: .
           # Test under the same minimum source BUY as the live process.
@@ -63,6 +63,11 @@ jobs:
           TELEGRAM_V33_BOT_TOKEN: ${{ secrets.TELEGRAM_V33_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           V33_MONITOR_MAX: '250'
+          # Only same-day crypto markets; suppress movies, celebrities,
+          # year-out questions, and unrelated entertainment markets.
+          V33_MARKET_FOCUS: 'crypto_short'
+          # Silent if no verified BUY instead of hourly Telegram noise.
+          V33_QUIET_STATUS_ENABLED: '0'
           # Favor user-requested active Bitcoin 5-minute wallet, but keep
           # standard candidate and order-book safety checks.
           V33_PRIORITY_WALLETS: '0x5b6331e7ff0831a3fe2ed12004747db1a9c911a4'
