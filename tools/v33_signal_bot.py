@@ -86,7 +86,7 @@ RECENT_CACHE_SECONDS = 180
 # Active != closed: require a fresh, complete view of unrealized red positions.
 ACTIVE_CACHE_SECONDS = 60
 ACTIVE_PAGE_LIMIT = 100
-ACTIVE_PAGE_CAP = 5
+ACTIVE_PAGE_CAP = 12  # up to 1,200 positions, never trust a partial portfolio
 ACTIVE_MIN_ENTRY_USD = 10.0
 ACTIVE_MATERIAL_LOSS_PCT = .05
 ACTIVE_MAX_RED_FRACTION = float(os.getenv("V33_ACTIVE_MAX_RED_FRACTION", "0.60"))
@@ -336,8 +336,9 @@ def fetch_open_positions(wallet):
     Never claim good active form from a truncated / partial API response.
     """
     cursor = None
+    seen_cursors = set()
     rows = []
-    for _ in range(ACTIVE_PAGE_CAP):
+    for page_number in range(1, ACTIVE_PAGE_CAP + 1):
         params = {"user": wallet, "status": "OPEN",
                   "filter_type": "TOKENS", "filter_amount": "0.01",
                   "sort_by": "CURRENT_VALUE", "sort_direction": "DESC",
@@ -355,14 +356,20 @@ def fetch_open_positions(wallet):
         rows.extend(page)
         pagination = response["pagination"]
         if pagination.get("has_more") is False:
+            if page_number > 5:
+                print("V33 ACTIVE SNAPSHOT COMPLETE:", page_number, "pages")
             return rows
         if pagination.get("has_more") is not True:
             raise ValueError("Active positions pagination status unknown")
         new_cursor = pagination.get("next_cursor")
-        if not isinstance(new_cursor, str) or not new_cursor or new_cursor == cursor:
+        if (not isinstance(new_cursor, str) or not new_cursor or
+                new_cursor == cursor or new_cursor in seen_cursors):
             raise ValueError("Active positions pagination cursor invalid")
+        seen_cursors.add(new_cursor)
         cursor = new_cursor
-    raise RuntimeError("Active positions page cap: incomplete wallet snapshot")
+    raise RuntimeError(
+        "Active positions page cap: incomplete wallet snapshot "
+        f"after {ACTIVE_PAGE_CAP} pages")
 
 
 def active_form(rows):
@@ -931,6 +938,12 @@ def deliver(state, selected, now, *, clock=None):
         if sent >= MAX_ALERTS:
             mark(state, "alert_cap")
             continue
+        # These counts start at deployment, do not measure independent trades
+        # or profitability; each passed gate is explicit and fail-closed.
+        topic = ("btc" if is_btc_market(group) else "sports") if (
+            MARKET_FOCUS == "sports_btc") else None
+        if topic:
+            mark(state, "eligible_source_buy_" + topic)
         if conflicting_wallet_signal(state, group, cand, checked_at):
             mark(state, "conflicting_wallets")
             del state["pending"][key]
@@ -961,6 +974,8 @@ def deliver(state, selected, now, *, clock=None):
             mark(state, reason)
             del state["pending"][key]
             continue
+        if topic:
+            mark(state, "book_verified_" + topic)
         try:
             recent_reason = recent_form_reason(state, group["wallet"], checked_at)
         except Exception as exc:
@@ -971,6 +986,8 @@ def deliver(state, selected, now, *, clock=None):
             mark(state, recent_reason)
             del state["pending"][key]
             continue
+        if topic:
+            mark(state, "recent_verified_" + topic)
         try:
             active_reason = active_form_reason(state, group["wallet"], checked_at)
         except Exception as exc:
@@ -981,6 +998,8 @@ def deliver(state, selected, now, *, clock=None):
             mark(state, active_reason)
             del state["pending"][key]
             continue
+        if topic:
+            mark(state, "portfolio_verified_" + topic)
         # Verification can take seconds. On 5m markets, confirm freshness
         # AGAIN just before invoking Telegram (not only at poll start).
         send_at = max(checked_at, int(clock())) if clock else checked_at
