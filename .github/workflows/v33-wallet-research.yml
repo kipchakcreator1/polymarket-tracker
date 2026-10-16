@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Verify 13 offline tests including safe full-universe crypto replacement
+      - name: Verify sports-first and BTC-only wallet research tests
         env:
           PYTHONPATH: .
         run: |
@@ -45,7 +45,7 @@ jobs:
         env:
           PYTHONPATH: .
           V33_TARGET_WALLETS: '12000'
-          V33_MARKETS_PER_RUN: '240'
+          V33_MARKETS_PER_RUN: '120'
           V33_GAMMA_PAGES: '20'
           # Reduce public Polymarket 429s while favoring newly active crypto wallets.
           V33_SCORE_BATCH: '75'
