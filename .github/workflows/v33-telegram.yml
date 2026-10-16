@@ -62,14 +62,16 @@ jobs:
           # Favor user-requested active Bitcoin 5-minute wallet, but keep
           # standard candidate and order-book safety checks.
           V33_PRIORITY_WALLETS: '0x5b6331e7ff0831a3fe2ed12004747db1a9c911a4'
-          V33_MIN_TRADE_USD: '50'
+          # $35+ wallet BUY, still requiring tradable $5 book and risk verification.
+          V33_MIN_TRADE_USD: '35'
           V33_MIN_PRICE: '0.15'
           V33_MAX_PRICE: '0.85'
           V33_MAX_ALERTS: '10'
           # Recent scoring includes CLOSED + settled unredeemed losses.
-          # Three material ($5+) residual losses in 24h suppress signals.
+          # Last-position-activity is not the actual settlement date.
+          # Require 6+ material unredeemed losers before this veto.
           V33_MIN_RECENT_LOSS_USD: '5'
-          V33_MAX_UNREDEEMED_LOSSES_24H: '2'
+          V33_MAX_UNREDEEMED_LOSSES_24H: '5'
           # Never notify on political markets (Gamma event tags + title guard).
           V33_EXCLUDE_POLITICS: '1'
           V33_MAX_PRICE_RISE: '0.05'
