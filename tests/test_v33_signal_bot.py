@@ -1112,5 +1112,24 @@ class BotTests(unittest.TestCase):
 
 
 
+    def test_last_five_mostly_losses_block_high_old_winrate(self):
+        rows = [{"realizedPnl": 1}, {"realizedPnl": -4},
+                {"realizedPnl": 1}, {"realizedPnl": -4},
+                {"realizedPnl": -4}] + [{"realizedPnl": 10}] * 15
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
+            state = bot.blank_state()
+            self.assertEqual(bot.recent_form_reason(state, W, NOW),
+                             "recent_last5_poor")
+            self.assertEqual(state["recent_form_cache"][W]["last5_wins"], 2)
+            self.assertLess(state["recent_form_cache"][W]["last5_net_pnl"], 0)
+
+    def test_last_five_winning_pnl_passes_even_with_one_last_loss(self):
+        rows = [{"realizedPnl": -1}, {"realizedPnl": 6},
+                {"realizedPnl": 6}, {"realizedPnl": 6},
+                {"realizedPnl": -2}] + [{"realizedPnl": 5}] * 15
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
+            self.assertIsNone(bot.recent_form_reason(bot.blank_state(), W, NOW))
+
+
 if __name__ == "__main__":
     unittest.main()
