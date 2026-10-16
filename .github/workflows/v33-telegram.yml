@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Verify offline v3.3 bot tests
+      - name: Audit-gated v3.3 live bot tests (63 scenarios)
         env:
           PYTHONPATH: .
         run: |
