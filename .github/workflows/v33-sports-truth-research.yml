@@ -1,0 +1,82 @@
+name: v3.3 Sports Truth Research (NO TELEGRAM)
+
+# Verify resolved picks against final market payouts. Read-only public APIs.
+# Never sends a Telegram BUY and never places orders.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-sports-truth-research.yml']
+  schedule:
+    - cron: '37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v33-sports-truth-research
+  cancel-in-progress: false
+
+jobs:
+  outcome-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout isolated v3.3 research branch
+        uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove cashouts, partial datasets and disputed outcomes cannot fake wins
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_result_audit.py
+          python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
+      - name: Analyze actual sports picks using public resolutions
+        env:
+          PYTHONPATH: .
+          V33_TRUTH_WALLETS_PER_RUN: '3'
+        run: |
+          python -u tools/v33_result_audit.py
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          report = json.load(open("research/v33_truth_report.json"))
+          counts = report["alerts"]["summary"]
+          print("### Sports pick outcome verification (not trading PnL)")
+          print("- Previously sent BUYs resolved WIN:", counts["win"])
+          print("- Previously sent BUYs resolved LOSS:", counts["loss"])
+          print("- Unresolved or ambiguous:", counts["unresolved_or_uncertain"])
+          print("- Not checked this pass:", counts.get("not_checked", 0))
+          print("- Category unverified/not sports:", counts["not_verified_sport"])
+          print("- Research API errors:", counts["api_error"])
+          print("- Wallet samples processed:", len(report["wallets"]))
+          print("- Certified complete samples >=20:", sum(
+            bool(x.get("certified_sample")) for x in report["wallets"].values()))
+          print("- No historical copy ROI available: entry book prices not retained.")
+          PY
+      - name: Persist ONLY independent research outcomes
+        if: success()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/v33_truth_report.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'research(v3.3): verified sports wallet outcomes [skip ci]'
+            saved=false
+            for i in 1 2 3 4 5; do
+              git fetch origin v3.3-wallet-research
+              git rebase origin/v3.3-wallet-research
+              if git push origin HEAD:v3.3-wallet-research; then
+                saved=true
+                break
+              fi
+              sleep 3
+            done
+            test "$saved" = true
+          fi
