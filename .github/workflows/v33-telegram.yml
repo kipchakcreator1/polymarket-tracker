@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 'Audit-gated 89-case sports BUY funnel and 1200-position portfolio verification'
+      - name: 'Audit-gated sports BUY safety and prospective $5 copy quote evidence'
         env:
           PYTHONPATH: .
           # Test under the same minimum source BUY as the live process.
@@ -169,6 +169,9 @@ jobs:
                     counts.get("portfolio_verified_" + topic, 0))
           print("- Active portfolio API incomplete/error rejections:",
                 counts.get("active_form_request_error", 0))
+          print("- Prospective hypothetical $5 entry quotes recorded:",
+                len(data.get("signal_evidence") or {}))
+          print("- These are NOT filled orders or the user's realized returns.")
           print("- The historic BUY total predates per-topic classification.")
           print("- Latest rejection counts:", last.get("this_poll", {}))
           print("- Telegram server acceptance is not proof of phone notification.")
