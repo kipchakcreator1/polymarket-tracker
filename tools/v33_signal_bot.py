@@ -22,6 +22,7 @@ SHORTLIST = Path("research/v33_wallet_shortlist.json")
 STATE = Path("research/v33_signal_state.json")
 MAX_WALLETS = max(1, min(250, int(os.getenv("V33_MONITOR_MAX", "200"))))
 MAX_ALERTS = max(1, min(12, int(os.getenv("V33_MAX_ALERTS", "6"))))
+REPEAT_BUY_COOLDOWN_SECONDS = 1800  # New fill on same market after 30m is new information
 MIN_USD = float(os.getenv("V33_MIN_TRADE_USD", "50"))
 MIN_PRICE = float(os.getenv("V33_MIN_PRICE", "0.15"))
 MAX_PRICE = float(os.getenv("V33_MAX_PRICE", "0.85"))
@@ -54,8 +55,10 @@ RECENT_CLOSED_WINDOW = 20
 RECENT_PAGE_SIZE = 100
 RECENT_LOST_LOOKBACK_SECONDS = 24 * 3600
 RECENT_MIN_MATERIAL_LOSS_USD = float(os.getenv("V33_MIN_RECENT_LOSS_USD", "5"))
-RECENT_MAX_UNREDEEMED_LOSSES_24H = int(os.getenv("V33_MAX_UNREDEEMED_LOSSES_24H", "2"))
-RECENT_MIN_POSITIVE_RATE = .60
+# 24h applies to last POSITION activity, not confirmed resolution time.
+# Do not interpret this as the count of markets actually lost today.
+RECENT_MAX_UNREDEEMED_LOSSES_24H = int(os.getenv("V33_MAX_UNREDEEMED_LOSSES_24H", "5"))
+RECENT_MIN_POSITIVE_RATE = .55
 RECENT_MIN_PROFIT_FACTOR = 1.25
 RECENT_MAX_LOSS_STREAK = 3
 MAX_FAST_TRADE_AGE = 75
@@ -588,7 +591,7 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
                        f"{recent['positive_rate']:.0%} прибыльных; "
                        f"лузов подряд: {recent['loss_streak']}; "
                        f"PnL: ${recent['net_pnl']:+,.0f}; "
-            f"непогашенных лузов ≥$5 за 24ч: "
+            f"непогашенных убыточных позиций с активностью за 24ч: "
             f"{recent['unredeemed_lost_24h']}\n")
     return ("\U0001f9ea <b>v3.3 • новый BUY-трейд</b>\n"
             + "\U0001f464 " + name + "\n"
@@ -645,11 +648,13 @@ def conflicting_wallet_signal(state, group, cand, now):
     return False
 
 
-def deliver(state, selected, now):
+def deliver(state, selected, now, *, clock=None):
+    """Only send verified fresh fills; optionally use a live clock per stage."""
     sent = 0
     for key, group in sorted(list(state["pending"].items()),
                              key=signal_sort_key):
-        cand, reason = candidate(group, now)
+        checked_at = max(now, int(clock())) if clock else now
+        cand, reason = candidate(group, checked_at)
         if reason:
             mark(state, reason)
             del state["pending"][key]
@@ -659,23 +664,25 @@ def deliver(state, selected, now):
             del state["pending"][key]
             continue
         dedupe = key + "|" + cand["token"]
-        if dedupe in state["sent"]:
+        # A later, NEW purchase on the same outcome can be useful. The
+        # individual fill IDs in state["seen"] still prevent replays.
+        if checked_at - int(state["sent"].get(dedupe) or 0) < REPEAT_BUY_COOLDOWN_SECONDS:
             del state["pending"][key]
             continue
         if sent >= MAX_ALERTS:
             mark(state, "alert_cap")
             continue
-        if conflicting_wallet_signal(state, group, cand, now):
+        if conflicting_wallet_signal(state, group, cand, checked_at):
             mark(state, "conflicting_wallets")
             del state["pending"][key]
             continue
-        timing_reason = fast_market_reason(group, now)
+        timing_reason = fast_market_reason(group, checked_at)
         if timing_reason:
             mark(state, timing_reason)
             del state["pending"][key]
             continue
         try:
-            politics_reason = political_market_reason(state, group, now)
+            politics_reason = political_market_reason(state, group, checked_at)
         except Exception as exc:
             mark(state, "politics_metadata_error")
             print("V33 POLITICS WARNING:", type(exc).__name__, str(exc)[:100])
@@ -696,7 +703,7 @@ def deliver(state, selected, now):
             del state["pending"][key]
             continue
         try:
-            recent_reason = recent_form_reason(state, group["wallet"], now)
+            recent_reason = recent_form_reason(state, group["wallet"], checked_at)
         except Exception as exc:
             mark(state, "recent_form_request_error")
             print("V33 RECENT FORM WARNING:", type(exc).__name__, str(exc)[:100])
@@ -706,7 +713,7 @@ def deliver(state, selected, now):
             del state["pending"][key]
             continue
         try:
-            active_reason = active_form_reason(state, group["wallet"], now)
+            active_reason = active_form_reason(state, group["wallet"], checked_at)
         except Exception as exc:
             mark(state, "active_form_request_error")
             print("V33 ACTIVE FORM WARNING:", type(exc).__name__, str(exc)[:100])
@@ -715,17 +722,27 @@ def deliver(state, selected, now):
             mark(state, active_reason)
             del state["pending"][key]
             continue
+        # Verification can take seconds. On 5m markets, confirm freshness
+        # AGAIN just before invoking Telegram (not only at poll start).
+        send_at = max(checked_at, int(clock())) if clock else checked_at
+        late_reason = fast_market_reason(group, send_at)
+        if send_at - int(group["last"]) > MAX_AGE:
+            late_reason = "expired_before_send"
+        if late_reason:
+            mark(state, late_reason)
+            del state["pending"][key]
+            continue
         try:
             recent = state.get("recent_form_cache", {}).get(group["wallet"])
             active = state.get("active_form_cache", {}).get(group["wallet"])
             v2.send_telegram(message(group, selected[group["wallet"]],
-                                     cand, quote, now, recent=recent,
+                                     cand, quote, send_at, recent=recent,
                                      active=active))
         except Exception as exc:
             mark(state, "telegram_error")
             print("V33 TELEGRAM WARNING:", type(exc).__name__, str(exc)[:100])
             continue  # unsent pending trade remains available for retry
-        state["sent"][dedupe] = now
+        state["sent"][dedupe] = send_at
         mark(state, "alerts_sent")
         del state["pending"][key]
         sent += 1
@@ -760,6 +777,7 @@ def main():
     source = json.loads(SHORTLIST.read_text(encoding="utf-8"))
     selected = select_wallets(source, now)
     state = load_state()
+    counters_before = dict(state["counters"])
     if not state["boot_notified"]:
         v2.send_telegram(
             "\U0001f9ea <b>Tracker v3.3 подключён!</b>\n"
@@ -797,7 +815,7 @@ def main():
                       type(exc).__name__, str(exc)[:100])
     if failures == len(selected):
         raise RuntimeError("All wallet queries failed")
-    sent = deliver(state, selected, now)
+    sent = deliver(state, selected, now, clock=time.time)
     if sent == 0:
         try:
             send_quiet_status(state, now, fills, len(selected))
@@ -829,12 +847,17 @@ def main():
         k: v for k, v in state["politics_cache"].items()
         if isinstance(v, dict) and
         0 <= now - int(v.get("checked_at") or 0) <= POLITICS_CACHE_SECONDS}
+    suppression_delta = {
+        k: int(n) - int(counters_before.get(k, 0))
+        for k, n in state["counters"].items()
+        if int(n) > int(counters_before.get(k, 0))}
     state["last_run"] = {"universe": source.get("candidate_count"),
                          "watching": len(selected), "priority_watching":
                          sum(w in selected for w in PRIORITY_WALLETS),
                          "new_fills": fills,
                          "initial_wallets": baseline, "alerts": sent,
                          "request_errors": failures, "poll_gaps": gaps,
+                         "this_poll": suppression_delta,
                          "suppression_totals": state["counters"]}
     save_state(state)
     print("V33 SUMMARY:", json.dumps(state["last_run"], sort_keys=True))
