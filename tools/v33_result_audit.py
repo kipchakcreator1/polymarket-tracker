@@ -25,7 +25,7 @@ WALLETS_PER_RUN = max(1, min(5, int(os.getenv("V33_TRUTH_WALLETS_PER_RUN", "3"))
 TRADE_PAGES = 4
 TRADE_PAGE_SIZE = 250
 MAX_CONDITIONS_PER_WALLET = 90
-MAX_SIGNAL_CONDITIONS = 250
+MAX_SIGNAL_CONDITIONS = 90  # bounded refresh per run; retain previous observations
 MAX_WALLET_OBSERVATIONS = 30
 
 
@@ -151,25 +151,37 @@ def safe_condition(value):
     return value if bot.v32.discovery.CONDITION_RE.fullmatch(value) else None
 
 
-def audit_signals(sent, gamma_cache, resolution_cache):
-    """Existing sent state has no copy-entry price. Never fabricate copy ROI."""
+def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None):
+    """Keep final verified evidence, refresh unresolved rows without faking PnL."""
+    saved = { (x.get("wallet"), x.get("condition"), x.get("token_id")): x
+              for x in (previous_rows or []) if isinstance(x, dict) }
     results = []
+    work = 0
     for key, stamp in sorted(sent.items(), key=lambda x: -int(x[1])):
-        if len(results) >= MAX_SIGNAL_CONDITIONS:
-            break
         parts = key.split("|")
         if len(parts) != 3 or not api.WALLET_RE.fullmatch(parts[0]):
             continue
         wallet, condition, token = parts
         if not safe_condition(condition) or not token:
             continue
-        try:
-            label, settled = classify(condition, token, gamma_cache, resolution_cache)
-        except Exception:
-            label, settled = "api_error", None
-        results.append({"wallet": wallet, "condition": condition,
-                        "token_id": token, "alert_at": stamp,
-                        "settled_at": settled, "result": label})
+        old = saved.get((wallet, condition, token))
+        if old and old.get("result") in ("win", "loss", "push_or_partial",
+                                          "not_verified_sport"):
+            row = old
+        elif work >= MAX_SIGNAL_CONDITIONS:
+            row = old or {"wallet": wallet, "condition": condition,
+                          "token_id": token, "alert_at": stamp,
+                          "settled_at": None, "result": "not_checked"}
+        else:
+            work += 1
+            try:
+                label, settled = classify(condition, token, gamma_cache, resolution_cache)
+            except Exception:
+                label, settled = "api_error", None
+            row = {"wallet": wallet, "condition": condition,
+                   "token_id": token, "alert_at": stamp,
+                   "settled_at": settled, "result": label}
+        results.append(row)
     return results
 
 
@@ -283,7 +295,6 @@ def sample_wallet(wallet, gamma_cache, resolution_cache):
 def choose_wallets(shortlist, previous):
     eligible = [r["wallet"] for r in shortlist.get("shortlist", [])
                 if isinstance(r, dict) and
-                safe_condition("0x" + "0" * 64) and
                 api.WALLET_RE.fullmatch(str(r.get("wallet") or "")) and
                 int(r.get("last_sports_buy") or 0) > 0]
     if not eligible:
@@ -300,7 +311,8 @@ def aggregate(rows):
             "unresolved_or_uncertain": sum(x["result"] == "unknown" for x in rows),
             "not_verified_sport": sum(x["result"] == "not_verified_sport" for x in rows),
             "push_or_partial": sum(x["result"] == "push_or_partial" for x in rows),
-            "api_error": sum(x["result"] == "api_error" for x in rows)}
+            "api_error": sum(x["result"] == "api_error" for x in rows),
+            "not_checked": sum(x["result"] == "not_checked" for x in rows)}
 
 
 def main():
@@ -314,7 +326,8 @@ def main():
         except (ValueError, OSError):
             pass
     gamma_cache, resolution_cache = {}, {}
-    signal_rows = audit_signals(state.get("sent", {}), gamma_cache, resolution_cache)
+    signal_rows = audit_signals(state.get("sent", {}), gamma_cache,
+        resolution_cache, previous.get("alerts", {}).get("rows"))
     wallets, next_index = choose_wallets(shortlist, previous)
     wallet_results = dict(previous.get("wallets") or {})
     for wallet in wallets:
