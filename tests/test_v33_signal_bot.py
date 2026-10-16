@@ -819,5 +819,48 @@ class BotTests(unittest.TestCase):
 
 
 
+    def test_telegram_api_ack_requires_message_id_and_matching_numeric_chat(self):
+        import io
+        import json
+        def reply(payload):
+            return io.BytesIO(json.dumps(payload).encode("utf-8"))
+        credentials = {"TELEGRAM_BOT_TOKEN": "dummy-valid-token",
+                       "TELEGRAM_CHAT_ID": "12345678"}
+        ok = {"ok": True, "result": {
+            "message_id": 42, "chat": {"id": 12345678}}}
+        wrong = {"ok": True, "result": {
+            "message_id": 43, "chat": {"id": 999}}}
+        missing = {"ok": True, "result": {
+            "chat": {"id": 12345678}}}
+        with mock.patch.dict(bot.os.environ, credentials), \
+             mock.patch.object(bot.v2.urllib.request, "urlopen",
+                               return_value=reply(ok)) as post:
+            self.assertEqual(bot.v2.send_telegram("test"), 42)
+            post.assert_called_once()
+        for response in [wrong, missing]:
+            with mock.patch.dict(bot.os.environ, credentials), \
+                 mock.patch.object(bot.v2.urllib.request, "urlopen",
+                                   return_value=reply(response)):
+                with self.assertRaises(RuntimeError):
+                    bot.v2.send_telegram("test")
+
+    def test_v33_persists_safe_telegram_acceptance_id(self):
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.5), NOW)
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade",
+                               return_value=({"price": .5}, None)), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
+             mock.patch.object(bot.v2, "send_telegram", return_value=444):
+            count = bot.deliver(state, {
+                W: {"name": "Test", "winrate": .82}}, NOW)
+        self.assertEqual(count, 1)
+        self.assertEqual(state["last_telegram_acceptance"]["message_id"], 444)
+        self.assertIn("not verified", state["last_telegram_acceptance"]["note"])
+        self.assertNotIn("chat_id", state["last_telegram_acceptance"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
