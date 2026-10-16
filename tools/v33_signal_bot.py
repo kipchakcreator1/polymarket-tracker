@@ -23,6 +23,7 @@ STATE = Path("research/v33_signal_state.json")
 MAX_WALLETS = max(1, min(250, int(os.getenv("V33_MONITOR_MAX", "200"))))
 MAX_ALERTS = max(1, min(12, int(os.getenv("V33_MAX_ALERTS", "6"))))
 REPEAT_BUY_COOLDOWN_SECONDS = 1800  # New fill on same market after 30m is new information
+AGGREGATE_BUY_WINDOW = 180  # Keep short sequences of smaller BUY fills together
 MIN_USD = float(os.getenv("V33_MIN_TRADE_USD", "50"))
 MIN_PRICE = float(os.getenv("V33_MIN_PRICE", "0.15"))
 MAX_PRICE = float(os.getenv("V33_MAX_PRICE", "0.85"))
@@ -417,8 +418,13 @@ def add_fill(state, row, now):
         return False
     state["seen"][digest] = now
     key = wallet + "|" + condition
+    # A stream of $10/$20 fills may exceed the threshold together. Retain
+    # short sequences, but never combine buys stretching across long periods.
+    old_group = state["pending"].get(key)
+    if old_group and stamp - int(old_group.get("first", old_group["last"])) > AGGREGATE_BUY_WINDOW:
+        del state["pending"][key]
     group = state["pending"].setdefault(key, {
-        "wallet": wallet, "condition": condition, "last": stamp,
+        "wallet": wallet, "condition": condition, "first": stamp, "last": stamp,
         "title": str(row.get("title") or "Market")[:160],
         "url": v32.slug_link(row), "outcomes": {}})
     group["last"] = max(group["last"], stamp)
@@ -726,6 +732,11 @@ def deliver(state, selected, now, *, clock=None):
                              key=signal_sort_key):
         checked_at = max(now, int(clock())) if clock else now
         cand, reason = candidate(group, checked_at)
+        if reason == "small_trade" and (checked_at - int(
+                group.get("first", group["last"])) <= AGGREGATE_BUY_WINDOW):
+            # Keep recent sub-threshold fills for the next poll: $20+$20
+            # is actionable information only if close together in time.
+            continue
         if reason:
             mark(state, reason)
             del state["pending"][key]
