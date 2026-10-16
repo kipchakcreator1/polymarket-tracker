@@ -286,9 +286,12 @@ def recent_form(rows, now=None):
         0 <= now - int(x.get("timestamp") or 0) <= RECENT_LOST_LOOKBACK_SECONDS
         for x in rows
     ) if now is not None else 0
+    last_five = pnls[:5]
     return {"closed": len(pnls),
             "positive_rate": sum(p > 0 for p in pnls) / len(pnls) if pnls else 0.,
             "loss_streak": streak, "net_pnl": gains - losses,
+            "last5_wins": sum(p > 0 for p in last_five),
+            "last5_net_pnl": sum(last_five),
             "profit_factor": gains / losses if losses > 0 else None,
             "unredeemed_lost_24h": recent_unredeemed_losses}
 
@@ -299,6 +302,7 @@ def recent_form_reason(state, wallet, now):
     value = cache.get(wallet)
     if not (isinstance(value, dict) and
             "profit_factor" in value and "net_pnl" in value and
+            "last5_net_pnl" in value and "last5_wins" in value and
             "unredeemed_lost_24h" in value and
             0 <= now - int(value.get("checked_at") or 0) <= RECENT_CACHE_SECONDS):
         rows = fetch_recent_results(wallet, now)
@@ -313,6 +317,8 @@ def recent_form_reason(state, wallet, now):
         return "recent_loss_streak"
     if value["positive_rate"] < RECENT_MIN_POSITIVE_RATE:
         return "recent_positive_rate_low"
+    if value["last5_wins"] < 3 or value["last5_net_pnl"] <= 0:
+        return "recent_last5_poor"
     if (value["net_pnl"] <= 0 or
             (value["profit_factor"] is not None and
              value["profit_factor"] < RECENT_MIN_PROFIT_FACTOR)):
