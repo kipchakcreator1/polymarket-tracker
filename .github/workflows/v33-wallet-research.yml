@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Verify sports-first and BTC-only wallet research tests
+      - name: Verify 16 sports-first and BTC-only research tests and 350-candidate pool
         env:
           PYTHONPATH: .
         run: |
