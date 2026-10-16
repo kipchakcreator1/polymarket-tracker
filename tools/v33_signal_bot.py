@@ -542,6 +542,13 @@ def gamma_epoch(value):
         return None
 
 
+def is_btc_market(group):
+    """Recognize Bitcoin labels, not sufficient on its own for topic approval."""
+    label = str(group.get("title") or "") + " " + str(group.get("url") or "")
+    return bool(re.search(r"(?<![a-z0-9])(?:bitcoin|btc)(?![a-z0-9])",
+                          label, re.I))
+
+
 def market_focus_reason(state, group, now):
     """Allow only demonstrably short-horizon BTC/ETH/SOL/XRP markets.
 
@@ -555,8 +562,7 @@ def market_focus_reason(state, group, now):
         raise ValueError("Unsupported v3.3 market focus")
     label = str(group.get("title") or "") + " " + str(group.get("url") or "")
     # The production sports-first mode also supports Bitcoin, but no altcoins.
-    is_btc = bool(re.search(r"(?<![a-z0-9])(?:bitcoin|btc)(?![a-z0-9])",
-                            label, re.I))
+    is_btc = is_btc_market(group)
     if MARKET_FOCUS == "crypto_short" and not CRYPTO_NAME_RE.search(label):
         return "off_topic_market"
     if MARKET_FOCUS == "sports_btc" and re.search(
@@ -766,9 +772,14 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
 
 
 def signal_sort_key(item):
-    """Prioritize the requested wallet and 5-minute crypto events if capped."""
+    """In sports/BTC mode, place sports ahead of BTC, then honor wallet priority.
+
+    A non-BTC title is NOT enough to pass topic validation: deliver() still
+    requires official Gamma sports metadata before any BUY can be sent.
+    """
     group = item[1]
-    return (group["wallet"] not in PRIORITY_WALLETS,
+    return (MARKET_FOCUS == "sports_btc" and is_btc_market(group),
+            group["wallet"] not in PRIORITY_WALLETS,
             FAST_5M_RE.search(group.get("url") or "") is None,
             -int(group["last"]))
 
@@ -1004,6 +1015,10 @@ def deliver(state, selected, now, *, clock=None):
                 "note": "API accepted; client push/display is not verified"}
             print("V33 TELEGRAM ACCEPTED message_id=", receipt)
         mark(state, "alerts_sent")
+        # Count genuine server-accepted alerts by topic from this deployment
+        # onward; older historical BUY sends did not carry topic metadata.
+        if MARKET_FOCUS == "sports_btc":
+            mark(state, "alerts_btc" if is_btc_market(group) else "alerts_sports")
         del state["pending"][key]
         sent += 1
     return sent
