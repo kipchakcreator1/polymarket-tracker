@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 'Audit-gated sports-first BUY ordering, per-topic telemetry and conflict mute'
+      - name: 'Audit-gated 89-case sports BUY funnel and 1200-position portfolio verification'
         env:
           PYTHONPATH: .
           # Test under the same minimum source BUY as the live process.
@@ -158,6 +158,17 @@ jobs:
                 counts.get("alerts_sports", 0))
           print("- BTC BUY accepts after topic telemetry enabled:",
                 counts.get("alerts_btc", 0))
+          for topic in ("sports", "btc"):
+              print(f"- {topic.upper()} source BUY candidates (post topic/size/dedupe):",
+                    counts.get("eligible_source_buy_" + topic, 0))
+              print(f"- {topic.upper()} book-verified:",
+                    counts.get("book_verified_" + topic, 0))
+              print(f"- {topic.upper()} recent-form verified:",
+                    counts.get("recent_verified_" + topic, 0))
+              print(f"- {topic.upper()} full-portfolio verified:",
+                    counts.get("portfolio_verified_" + topic, 0))
+          print("- Active portfolio API incomplete/error rejections:",
+                counts.get("active_form_request_error", 0))
           print("- The historic BUY total predates per-topic classification.")
           print("- Latest rejection counts:", last.get("this_poll", {}))
           print("- Telegram server acceptance is not proof of phone notification.")
