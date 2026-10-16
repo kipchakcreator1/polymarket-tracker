@@ -154,7 +154,7 @@ class BotTests(unittest.TestCase):
         self.assertEqual(reason, "recent_loss_streak")
 
     def test_last_twenty_winrate_floor_blocks_poor_performance(self):
-        rows = [{"realizedPnl": 2}] * 11 + [{"realizedPnl": -1}] * 9
+        rows = [{"realizedPnl": 2}] * 10 + [{"realizedPnl": -1}] * 10
         with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
             self.assertEqual(
                 bot.recent_form_reason(bot.blank_state(), W, NOW),
@@ -677,6 +677,54 @@ class BotTests(unittest.TestCase):
             self.assertFalse(bot.send_quiet_status(state, NOW, 0, 250))
         send.assert_not_called()
 
+
+
+    def test_same_market_fresh_second_buy_allowed_after_30_minutes(self):
+        state = bot.blank_state()
+        base = {W: {"name": "Trader", "winrate": .82}}
+        def quote(*args, **kwargs):
+            return {"price": .6, "best_ask": .6, "spread": .02}, None
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade", side_effect=quote), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            self.assertTrue(bot.add_fill(state, trade(), NOW))
+            self.assertEqual(bot.deliver(state, base, NOW), 1)
+            newer = dict(trade(timestamp=NOW + 29*60), transaction_hash="newer")
+            self.assertTrue(bot.add_fill(state, newer, NOW+29*60))
+            self.assertEqual(bot.deliver(state, base, NOW+29*60), 0)
+            late = dict(trade(timestamp=NOW + 31*60), transaction_hash="late")
+            self.assertTrue(bot.add_fill(state, late, NOW+31*60))
+            self.assertEqual(bot.deliver(state, base, NOW+31*60), 1)
+        self.assertEqual(sender.call_count, 2)
+        self.assertEqual(state["counters"]["alerts_sent"], 2)
+
+    def test_delayed_verification_must_not_alert_on_expired_5m_market(self):
+        start = 1792056900
+        now = start + 185
+        row = trade(timestamp=now)
+        row["event_slug"] = "btc-updown-5m-1792056900"
+        state = bot.blank_state()
+        self.assertTrue(bot.add_fill(state, row, now))
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade", return_value=({"price": .6}, None)), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            counter = iter([now, now+35])
+            result = bot.deliver(state, {W: {"name": "", "winrate": .78}},
+                                 now, clock=lambda: next(counter))
+        self.assertEqual(result, 0)
+        sender.assert_not_called()
+        self.assertEqual(state["counters"]["fast_market_too_late"], 1)
+
+    def test_better_recent_form_requires_positive_pnl_and_profit_factor(self):
+        # A mere 55% positive positions cannot override losing unit economics.
+        rows = [{"realizedPnl": 1}] * 11 + [{"realizedPnl": -10}] * 9
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
+            self.assertEqual(bot.recent_form_reason(bot.blank_state(), W, NOW),
+                             "recent_negative_expectancy_sample")
 
 
 if __name__ == "__main__":
