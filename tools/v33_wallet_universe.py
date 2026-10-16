@@ -407,7 +407,7 @@ def score_universe(state, now):
     return success, errors
 
 
-def eligible_research_wallets(wallets, now, limit=250):
+def eligible_research_wallets(wallets, now, limit=350):
     candidates = []
     for address, m in wallets.items():
         if now - int(m.get("score_checked_at") or 0) > SCORE_REFRESH:
