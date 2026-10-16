@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Verify v3.3 offline tests
+      - name: Verify short-crypto-wallet discovery and portfolio-scoring tests
         env:
           PYTHONPATH: .
         run: |
@@ -44,7 +44,7 @@ jobs:
       - name: Collect and score public wallets WITHOUT Telegram or orders
         env:
           PYTHONPATH: .
-          V33_TARGET_WALLETS: '10000'
+          V33_TARGET_WALLETS: '12000'
           V33_MARKETS_PER_RUN: '240'
           V33_GAMMA_PAGES: '20'
           V33_SCORE_BATCH: '150'
