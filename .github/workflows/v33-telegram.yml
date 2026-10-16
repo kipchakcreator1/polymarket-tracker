@@ -44,9 +44,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Audit-gated v3.3 live bot tests (63 scenarios)
+      - name: Audit-gated v3.3 live bot tests (69 scenarios)
         env:
           PYTHONPATH: .
+          # Test under the same minimum source BUY as the live process.
+          V33_MIN_TRADE_USD: '35'
+          V33_MONITOR_MAX: '250'
+          V33_MAX_ALERTS: '10'
         run: |
           python -m py_compile tools/v33_signal_bot.py
           python -m unittest discover -s tests -p 'test_v33_signal_bot.py' -v
