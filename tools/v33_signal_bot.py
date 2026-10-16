@@ -50,7 +50,7 @@ PRIORITY_WALLETS = frozenset(w.strip().lower() for w in
     if v2.WALLET_RE.fullmatch(w.strip().lower()))
 FAST_5M_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-5m-(\d+)\b", re.I)
 # No celebrity/movie/politics/year-out predictions in the live Telegram feed.
-MARKET_FOCUS = os.getenv("V33_MARKET_FOCUS", "crypto_short").strip().lower()
+MARKET_FOCUS = os.getenv("V33_MARKET_FOCUS", "sports_btc").strip().lower()
 CRYPTO_NAME_RE = re.compile(r"(?<![a-z0-9])(?:bitcoin|btc|ethereum|eth|solana|sol|xrp|ripple)(?![a-z0-9])", re.I)
 CRYPTO_UPDOWN_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-(5m|15m|1h|4h)-(\d{10})\b", re.I)
 CRYPTO_WINDOW_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400}
@@ -68,9 +68,9 @@ RECENT_MIN_MATERIAL_LOSS_USD = float(os.getenv("V33_MIN_RECENT_LOSS_USD", "5"))
 # 24h applies to last POSITION activity, not confirmed resolution time.
 # Do not interpret this as the count of markets actually lost today.
 RECENT_MAX_UNREDEEMED_LOSSES_24H = int(os.getenv("V33_MAX_UNREDEEMED_LOSSES_24H", "5"))
-RECENT_MIN_POSITIVE_RATE = .55
+RECENT_MIN_POSITIVE_RATE = .60
 RECENT_MIN_PROFIT_FACTOR = 1.25
-RECENT_MAX_LOSS_STREAK = 3
+RECENT_MAX_LOSS_STREAK = 1
 MAX_FAST_TRADE_AGE = 75
 FAST_MARKET_END_BUFFER = 90
 RECENT_CACHE_SECONDS = 180
