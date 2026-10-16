@@ -101,6 +101,7 @@ jobs:
           START=$SECONDS
           pass=0
           errors=0
+          START_ALERTS=$(python -c "import json; print(json.load(open('research/v33_signal_state.json')).get('counters',{}).get('alerts_sent',0))")
           while (( SECONDS - START < 3000 )); do
             pass=$((pass + 1))
             echo "V33 CONTINUOUS POLL #${pass} at $(date -u +%FT%TZ)"
@@ -110,20 +111,39 @@ jobs:
               errors=$((errors + 1))
               echo "V33 POLL FAILURE #${errors}; will retry on next pass"
             fi
-            if (( pass % 3 == 0 )); then
+            # Persist every genuine BUY immediately after sending, not
+            # just every third poll, to reduce replay on runner interruption.
+            CURRENT_ALERTS=$(python -c "import json; print(json.load(open('research/v33_signal_state.json')).get('counters',{}).get('alerts_sent',0))")
+            if (( pass % 3 == 0 || CURRENT_ALERTS > START_ALERTS )); then
               git add research/v33_signal_state.json
               if ! git diff --cached --quiet; then
                 git commit -m 'chore(v3.3): checkpoint Telegram cursors [skip ci]'
                 git pull --rebase origin v3.3-wallet-research
                 git push origin HEAD:v3.3-wallet-research
               fi
+              START_ALERTS=$CURRENT_ALERTS
             fi
             # 45s + API work keeps 5-minute crypto signals fresher.
             sleep 45
           done
           echo "V33 SESSION SUMMARY passes=${pass} errors=${errors}"
-          if (( errors == pass )); then
-            echo "V33 FAILURE: no successful checks during this session"
+          echo "### v3.3 monitoring session" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Polls: ${pass}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Failed polls: ${errors}" >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          data = json.load(open("research/v33_signal_state.json"))
+          last = data.get("last_run") or {}
+          print("- Wallets scanned:", last.get("watching", "?"))
+          print("- Recently crypto-active qualified wallets:",
+                last.get("crypto_recent_watching", "not available"))
+          print("- Total BUY Telegram API accepts:",
+                data.get("counters", {}).get("alerts_sent", 0))
+          print("- Latest rejection counts:", last.get("this_poll", {}))
+          print("- Telegram server acceptance is not proof of phone notification.")
+          PY
+          if (( errors >= 3 && errors * 5 >= pass )); then
+            echo "V33 FAILURE: excessive failed polls (${errors}/${pass})"
             exit 1
           fi
 
