@@ -543,13 +543,22 @@ def market_focus_reason(state, group, now):
     """
     if MARKET_FOCUS == "all":
         return None
-    if MARKET_FOCUS != "crypto_short":
+    if MARKET_FOCUS not in ("crypto_short", "sports_btc"):
         raise ValueError("Unsupported v3.3 market focus")
     label = str(group.get("title") or "") + " " + str(group.get("url") or "")
-    if not CRYPTO_NAME_RE.search(label):
+    # The production sports-first mode also supports Bitcoin, but no altcoins.
+    is_btc = bool(re.search(r"(?<![a-z0-9])(?:bitcoin|btc)(?![a-z0-9])",
+                            label, re.I))
+    if MARKET_FOCUS == "crypto_short" and not CRYPTO_NAME_RE.search(label):
+        return "off_topic_market"
+    if MARKET_FOCUS == "sports_btc" and re.search(
+            r"(?<![a-z0-9])(?:ethereum|eth|solana|sol|xrp|ripple)(?![a-z0-9])",
+            label, re.I):
         return "off_topic_market"
     match = CRYPTO_UPDOWN_RE.search(str(group.get("url") or ""))
     if match:
+        if MARKET_FOCUS == "sports_btc" and not match.group(0).lower().startswith("btc-"):
+            return "off_topic_market"
         start = int(match.group(2))
         if not 1600000000 <= start <= 2100000000:
             return "market_bad_timestamp"
