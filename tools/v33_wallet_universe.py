@@ -179,6 +179,89 @@ def discover_short_crypto_markets(now):
     return list(found.values()), errors
 
 
+def discover_sports_markets(now):
+    """Prioritize scheduled/live real games from Gamma's official sports tags.
+
+    Never identify sports from a celebrity/title keyword alone. The /sports
+    endpoint supplies sport-to-tag IDs; /events?tag_id provides game markets.
+    """
+    try:
+        leagues = api.request_json("/sports", base=discovery.GAMMA,
+                                   tries=2, timeout=12)
+        if not isinstance(leagues, list):
+            raise ValueError("Sports metadata must be a list")
+    except Exception as exc:
+        print("V33 SPORTS DISCOVERY WARNING:", type(exc).__name__, str(exc)[:80])
+        return [], 1
+    ids = []
+    for item in leagues:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("sport") or "").lower() not in SPORTS_LEAGUES:
+            continue
+        for tag in str(item.get("tags") or "").split(","):
+            tag = tag.strip()
+            if tag.isdigit() and tag not in ids:
+                ids.append(tag)
+    ids = ids[:16]
+    errors = 0
+    found = {}
+    def one_tag(tag):
+        return api.request_json("/events", {
+            "tag_id": tag, "active": "true", "closed": "false",
+            "limit": 50, "offset": 0}, base=discovery.GAMMA,
+            tries=2, timeout=12)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(one_tag, tag): tag for tag in ids}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                events = future.result()
+                if not isinstance(events, list):
+                    raise ValueError("Sports event query returned non-list")
+                for event in events:
+                    if not isinstance(event, dict):
+                        continue
+                    markets = event.get("markets") or []
+                    if not isinstance(markets, list):
+                        continue
+                    for m in markets:
+                        if not isinstance(m, dict):
+                            continue
+                        condition = str(m.get("conditionId") or "").lower()
+                        if not discovery.CONDITION_RE.fullmatch(condition):
+                            continue
+                        if m.get("closed") is True or m.get("active") is False:
+                            continue
+                        when = (m.get("gameStartTime") or
+                                event.get("gameStartTime") or
+                                m.get("endDate") or event.get("endDate"))
+                        if not isinstance(when, str):
+                            continue
+                        try:
+                            import datetime
+                            parsed = datetime.datetime.fromisoformat(
+                                when.replace("Z", "+00:00"))
+                            if parsed.tzinfo is None:
+                                continue
+                            epoch = int(parsed.timestamp())
+                        except (ValueError, OverflowError):
+                            continue
+                        if not (-SPORTS_INPLAY_GRACE <= epoch-now <= SPORTS_GAME_HORIZON):
+                            continue
+                        found[condition] = {
+                            "condition": condition, "vol": api.asfloat(
+                                m.get("volume24hr") or m.get("volumeNum")),
+                            "sports_short": True,
+                            "game_at": epoch}
+            except Exception as exc:
+                errors += 1
+                print("V33 SPORTS EVENT WARNING:", type(exc).__name__,
+                      str(exc)[:80])
+    selected = sorted(found.values(), key=lambda x: (
+        x["game_at"] < now, abs(x["game_at"]-now), -x["vol"]))
+    return selected[:SPORTS_MARKETS_LIMIT], errors
+
+
 def fetch_market_trades(market, now):
     condition = market["condition"]
     response = api.request_json(
