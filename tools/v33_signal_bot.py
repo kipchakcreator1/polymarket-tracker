@@ -65,6 +65,7 @@ SPORTS_GAME_HORIZON = 7 * 86400
 SPORTS_INPLAY_GRACE = 8 * 3600
 MARKET_FOCUS_CACHE_SECONDS = 900
 QUIET_STATUS_ENABLED = os.getenv("V33_QUIET_STATUS_ENABLED", "0") == "1"
+CONFLICT_TELEGRAM_ENABLED = os.getenv("V33_CONFLICT_TELEGRAM_ENABLED", "0") == "1"
 MAX_AGE = 300
 MAX_CATCHUP = 7200
 # Re-evaluate recent closed-position results at alert time, not only at
@@ -1079,7 +1080,10 @@ def main():
                       type(exc).__name__, str(exc)[:100])
     if failures == len(selected):
         raise RuntimeError("All wallet queries failed")
-    conflicts = notify_opposing_wallets(state, selected, now)
+    # Conflict BUY veto remains active in deliver() even if optional
+    # conflict-only Telegram chatter is muted by default.
+    conflicts = (notify_opposing_wallets(state, selected, now)
+                 if CONFLICT_TELEGRAM_ENABLED else 0)
     sent = deliver(state, selected, now, clock=time.time)
     if QUIET_STATUS_ENABLED and sent == 0:
         try:
