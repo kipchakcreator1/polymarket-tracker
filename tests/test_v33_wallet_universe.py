@@ -98,5 +98,81 @@ class UniverseTests(unittest.TestCase):
         self.assertNotIn("place_order(", text)
 
 
+    def test_crypto_discovery_uses_live_slug_not_generic_market_ranking(self):
+        now = 1792144268
+        queried = []
+        condition = "0x" + "d"*64
+        def api(path, params, **kwargs):
+            self.assertEqual(path, "/events")
+            slug = params["slug"]
+            queried.append(slug)
+            if slug == "btc-updown-5m-" + str(now//300*300):
+                return [{"slug": slug, "markets": [{"conditionId": condition}]}]
+            return []
+        with mock.patch.object(v33.api, "request_json", side_effect=api):
+            markets, errors = v33.discover_short_crypto_markets(now)
+        self.assertEqual(errors, 0)
+        self.assertEqual(len(queried), 24)
+        self.assertEqual(len(markets), 1)
+        self.assertTrue(markets[0]["crypto_short"])
+        self.assertEqual(markets[0]["condition"], condition)
+
+    def test_crypto_detection_requires_real_midprice_buy_and_source_usd(self):
+        now = 1792144200
+        condition = "0x" + "d"*64
+        def row(wallet, ts, price, size, side="BUY"):
+            return {"condition_id": condition, "proxy_wallet": wallet,
+                    "side": side, "price": price, "size": size,
+                    "timestamp": ts}
+        payload = {"data": [row(A, now-20, .5, 30),  # $15
+                            row(B, now-30, .5, 2),   # $1 dust
+                            row(C, now-30, .99, 100),
+                            row(B, now-30, .5, 100, "SELL"),
+                            row(C, now-7200, .5, 100)]}
+        with mock.patch.object(v33.api, "request_json", return_value=payload):
+            n, seen = v33.fetch_market_trades(
+                {"condition": condition, "crypto_short": True}, now)
+        self.assertEqual(n, 5)
+        self.assertEqual(seen[A]["crypto_last_buy"], now-20)
+        self.assertEqual(seen[B]["crypto_last_buy"], 0)
+        self.assertEqual(seen[C]["crypto_last_buy"], 0)
+
+    def test_qualified_active_crypto_wallet_ranks_above_general_giant(self):
+        now = 1792144200
+        base = {"n": 100, "winrate": .75,
+                "recent_realized_pnl": 500, "profit_factor": 2,
+                "score_checked_at": now, "buy_rows_sampled": 20,
+                "mid_buys_sampled": 12, "expensive_buys_sampled": 0}
+        general = dict(base, mid_buys_sampled=5000,
+                       recent_realized_pnl=999999)
+        crypto = dict(base, crypto_last_buy=now-25)
+        ranked, supported = v33.eligible_research_wallets(
+            {A: general, B: crypto}, now, limit=1)
+        self.assertEqual(ranked[0]["wallet"], B)
+        self.assertEqual(ranked[0]["last_crypto_buy"], now-25)
+        self.assertEqual(supported, 2)
+
+    def test_crypto_recency_is_real_trade_timestamp_not_refresh_timestamp(self):
+        now = 1792144200
+        state = {"wallets": {A: {"crypto_last_buy": now-100}}}
+        def sample(ts):
+            return {A: {"markets": 1, "rows": 1, "mid_buys": 1,
+                        "expensive_buys": 0, "buy_rows": 1,
+                        "crypto_last_buy": ts}}
+        v33.incorporate_sample(state, sample(now-25), now)
+        self.assertEqual(state["wallets"][A]["crypto_last_buy"], now-25)
+        v33.incorporate_sample(state, sample(now-25), now+3600)
+        self.assertEqual(state["wallets"][A]["crypto_last_buy"], now-25)
+        after, _ = v33.eligible_research_wallets({
+            A: {"n": 100, "winrate": .75, "recent_realized_pnl": 500,
+                "profit_factor": 2, "score_checked_at": now+86400,
+                "buy_rows_sampled": 20, "mid_buys_sampled": 12,
+                "expensive_buys_sampled": 0,
+                "crypto_last_buy": now-25}}, now+2*86400)
+        self.assertGreater(now+2*86400-after[0]["last_crypto_buy"],
+                           v33.CRYPTO_ACTIVE_WINDOW)
+
+
+
 if __name__ == "__main__":
     unittest.main()
