@@ -901,7 +901,12 @@ def deliver(state, selected, now, *, clock=None):
         send_at = max(checked_at, int(clock())) if clock else checked_at
         late_reason = fast_market_reason(group, send_at)
         if not late_reason:
-            late_reason = market_focus_reason(state, group, send_at)
+            try:
+                late_reason = market_focus_reason(state, group, send_at)
+            except Exception as exc:
+                mark(state, "market_focus_request_error")
+                print("V33 MARKET FOCUS WARNING:", type(exc).__name__, str(exc)[:80])
+                continue
         if send_at - int(group["last"]) > MAX_AGE:
             late_reason = "expired_before_send"
         if late_reason:
