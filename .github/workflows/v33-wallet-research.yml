@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Verify short-crypto-wallet discovery and portfolio-scoring tests
+      - name: Verify 13 offline tests including safe full-universe crypto replacement
         env:
           PYTHONPATH: .
         run: |
