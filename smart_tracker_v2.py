@@ -333,8 +333,18 @@ def send_telegram(text):
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
             result = json.load(response)
-        if not result.get("ok"):
+        if not isinstance(result, dict) or result.get("ok") is not True:
             raise RuntimeError("Telegram rejected message")
+        receipt = result.get("result")
+        if not isinstance(receipt, dict) or not isinstance(receipt.get("message_id"), int):
+            raise RuntimeError("Telegram response lacks a confirmed message_id")
+        response_chat = receipt.get("chat")
+        if not isinstance(response_chat, dict):
+            raise RuntimeError("Telegram response lacks destination chat")
+        # Numeric private/group IDs can be verified without logging the ID.
+        if chat_id.lstrip("-").isdigit() and str(response_chat.get("id")) != chat_id:
+            raise RuntimeError("Telegram accepted message in an unexpected chat")
+        return receipt["message_id"]
     except urllib.error.HTTPError as exc:
         # Do not print the URL/token in errors.
         raise RuntimeError(f"Telegram API HTTP {exc.code}") from exc
