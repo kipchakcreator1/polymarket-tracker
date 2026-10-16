@@ -1043,5 +1043,74 @@ class BotTests(unittest.TestCase):
 
 
 
+    def test_sports_btc_mode_accepts_official_nba_game(self):
+        import datetime
+        now = 1792137600
+        state = bot.blank_state()
+        row = trade(price=.5, timestamp=now)
+        row.update(title="Lakers vs Celtics - Moneyline",
+                   event_slug="nba-lal-bos-2026")
+        bot.add_fill(state, row, now)
+        group = next(iter(state["pending"].values()))
+        game = datetime.datetime.fromtimestamp(
+            now+3600, datetime.timezone.utc).isoformat()
+        match = {"conditionId": COND, "sportsMarketType": "moneyline",
+                 "gameStartTime": game, "endDate": game}
+        with mock.patch.object(bot, "MARKET_FOCUS", "sports_btc"), \
+             mock.patch.object(bot.v2, "request_json",
+                               return_value=[match]) as api:
+            self.assertIsNone(bot.market_focus_reason(state, group, now))
+            self.assertIsNone(bot.market_focus_reason(state, group, now+180))
+        api.assert_called_once()
+
+    def test_sports_btc_mode_allows_inplay_even_if_enddate_was_kickoff(self):
+        import datetime
+        now = 1792137600
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.5, timestamp=now), now)
+        group = next(iter(state["pending"].values()))
+        kickoff = datetime.datetime.fromtimestamp(
+            now-3600, datetime.timezone.utc).isoformat()
+        match = {"conditionId": COND, "sportsMarketType": "moneyline",
+                 "gameStartTime": kickoff, "endDate": kickoff}
+        with mock.patch.object(bot, "MARKET_FOCUS", "sports_btc"), \
+             mock.patch.object(bot.v2, "request_json", return_value=[match]):
+            self.assertIsNone(bot.market_focus_reason(state, group, now))
+
+    def test_sports_btc_rejects_movies_and_altcoins(self):
+        now = 1792137600
+        for title in ["Will Spider-Man release in 2028?",
+                      "Ethereum Up or Down 5m", "Will Solana hit $300?"]:
+            state = bot.blank_state()
+            row = trade(price=.5, timestamp=now)
+            row["title"] = title
+            bot.add_fill(state, row, now)
+            with mock.patch.object(bot, "MARKET_FOCUS", "sports_btc"), \
+                 mock.patch.object(bot.v2, "request_json",
+                                   return_value=[{"conditionId": COND}]):
+                self.assertEqual(bot.market_focus_reason(
+                    state, next(iter(state["pending"].values())), now),
+                    "off_topic_market")
+
+    def test_sports_btc_rejects_unverified_pop_culture_as_sport(self):
+        now = 1792137600
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.5, timestamp=now), now)
+        with mock.patch.object(bot, "MARKET_FOCUS", "sports_btc"), \
+             mock.patch.object(bot.v2, "request_json",
+                               return_value=[{"conditionId": COND,
+                                              "category": "Entertainment"}]):
+            self.assertEqual(bot.market_focus_reason(
+                state, next(iter(state["pending"].values())), now),
+                "off_topic_market")
+
+    def test_repeated_recent_losses_block_high_old_winrate(self):
+        rows = [{"realizedPnl": -5}] * 2 + [{"realizedPnl": 9}] * 18
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
+            self.assertEqual(bot.recent_form_reason(
+                bot.blank_state(), W, NOW), "recent_loss_streak")
+
+
+
 if __name__ == "__main__":
     unittest.main()
