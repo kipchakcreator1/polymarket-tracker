@@ -283,7 +283,7 @@ def fetch_market_trades(market, now):
             continue
         data = stats.setdefault(wallet, {"rows": 0, "mid_buys": 0,
                                          "expensive_buys": 0, "buy_rows": 0,
-                                         "crypto_last_buy": 0})
+                                         "crypto_last_buy": 0, "sports_last_buy": 0})
         data["rows"] += 1
         if str(row.get("side") or "").upper() == "BUY":
             price = api.asfloat(row.get("price"), -1)
@@ -300,6 +300,12 @@ def fetch_market_trades(market, now):
                         api.asfloat(row.get("size")) * price >= CRYPTO_WALLET_MIN_USD):
                     data["crypto_last_buy"] = max(data["crypto_last_buy"],
                                                   timestamp)
+                if (market.get("sports_short") and
+                        now - SPORTS_SAMPLE_LOOKBACK <= timestamp <= now+60 and
+                        MID_LOW <= price <= MID_HIGH and
+                        api.asfloat(row.get("size")) * price >= CRYPTO_WALLET_MIN_USD):
+                    data["sports_last_buy"] = max(data["sports_last_buy"],
+                                                  timestamp)
     return len(response["data"]), stats
 
 
@@ -308,7 +314,8 @@ def incorporate_sample(state, observations, now):
     # Diversity (distinct sampled markets) first. Do not assume trading
     # volume or closed-position PnL implies prediction skill.
     ranked = sorted(observations.items(),
-                    key=lambda kv: (-int(kv[1].get("crypto_last_buy") or 0),
+                    key=lambda kv: (-int(kv[1].get("sports_last_buy") or 0),
+                                    -int(kv[1].get("crypto_last_buy") or 0),
                                     -kv[1]["markets"], -kv[1]["mid_buys"],
                                     -kv[1]["rows"], kv[0]))
     added = replaced = 0
@@ -348,6 +355,8 @@ def incorporate_sample(state, observations, now):
         item["last_market_seen"] = now
         if int(sample.get("crypto_last_buy") or 0) > int(item.get("crypto_last_buy") or 0):
             item["crypto_last_buy"] = int(sample["crypto_last_buy"])
+        if int(sample.get("sports_last_buy") or 0) > int(item.get("sports_last_buy") or 0):
+            item["sports_last_buy"] = int(sample["sports_last_buy"])
         # These are SAMPLED rows, potentially repeated next run. They are
         # descriptive price observations, not unique trades or backtest PnL.
         for key in ("mid_buys", "expensive_buys", "buy_rows"):
@@ -366,7 +375,8 @@ def due_for_scoring(wallets, now):
         if now >= retry_after and (last == 0 or now - last > SCORE_REFRESH):
             pending.append((address, item))
     # Find history for newly discovered wallets before refreshing old records.
-    pending.sort(key=lambda x: (-int(x[1].get("crypto_last_buy") or 0),
+    pending.sort(key=lambda x: (-int(x[1].get("sports_last_buy") or 0),
+                                -int(x[1].get("crypto_last_buy") or 0),
                                 bool(x[1].get("score_checked_at")),
                                 int(x[1].get("score_checked_at") or 0),
                                 -int(x[1].get("mid_buys_sampled", 0)), x[0]))
@@ -424,8 +434,10 @@ def eligible_research_wallets(wallets, now, limit=250):
             "sampled_expensive_buys_nonunique": expensive,
             "price_profile": "candidate" if price_supported else "unverified",
             "last_market_seen": m.get("last_market_seen"),
-            "last_crypto_buy": int(m.get("crypto_last_buy") or 0)})
+            "last_crypto_buy": int(m.get("crypto_last_buy") or 0),
+            "last_sports_buy": int(m.get("sports_last_buy") or 0)})
     candidates.sort(key=lambda c: (
+        not (0 <= now - int(c.get("last_sports_buy") or 0) <= SPORTS_ACTIVE_WINDOW),
         not (0 <= now - int(c.get("last_crypto_buy") or 0) <= CRYPTO_ACTIVE_WINDOW),
         c["price_profile"] != "candidate",
         -min(c["sampled_midprice_buys_nonunique"], 30),
@@ -448,7 +460,14 @@ def main():
     state = load_universe(now)
     before = len(state["wallets"])
     selected, pool_size, gamma_errors = fetch_markets(now)
+    sports_markets, sports_gamma_errors = discover_sports_markets(now)
     crypto_markets, crypto_gamma_errors = discover_short_crypto_markets(now)
+    known = {m["condition"]: m for m in selected}
+    for m in sports_markets:
+        if m["condition"] in known:
+            known[m["condition"]]["sports_short"] = True
+        else:
+            selected.append(m)
     known = {m["condition"]: m for m in selected}
     for m in crypto_markets:
         if m["condition"] in known:
@@ -473,6 +492,8 @@ def main():
                     acc["markets"] += 1
                     acc["crypto_last_buy"] = max(int(acc.get("crypto_last_buy") or 0),
                                                  int(stats.get("crypto_last_buy") or 0))
+                    acc["sports_last_buy"] = max(int(acc.get("sports_last_buy") or 0),
+                                                 int(stats.get("sports_last_buy") or 0))
                     for field in ("rows", "mid_buys", "expensive_buys", "buy_rows"):
                         acc[field] += stats[field]
             except Exception as exc:
@@ -491,6 +512,14 @@ def main():
         "target": TARGET, "gamma_markets": pool_size,
         "markets_sampled": len(selected), "market_queries_ok": market_success,
         "gamma_errors": gamma_errors, "crypto_gamma_errors": crypto_gamma_errors,
+        "sports_markets_sampled": len(sports_markets),
+        "sports_gamma_errors": sports_gamma_errors,
+        "sports_recent_trader_wallets": sum(
+            0 <= now-int(m.get("sports_last_buy") or 0) <= SPORTS_SAMPLE_LOOKBACK
+            for m in observations.values()),
+        "sports_qualified_in_shortlist": sum(
+            0 <= now-int(m.get("last_sports_buy") or 0) <= SPORTS_ACTIVE_WINDOW
+            for m in shortlist),
         "crypto_markets_sampled": len(crypto_markets),
         "crypto_recent_trader_wallets": sum(0 <= now-int(m.get("crypto_last_buy") or 0) <= CRYPTO_LOOKBACK for m in observations.values()),
         "crypto_qualified_in_shortlist": sum(0 <= now-int(m.get("last_crypto_buy") or 0) <= CRYPTO_ACTIVE_WINDOW for m in shortlist),
