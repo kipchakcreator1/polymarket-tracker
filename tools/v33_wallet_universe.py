@@ -29,10 +29,17 @@ RECENT = 7 * 86400
 CRYPTO_LOOKBACK = 3600
 CRYPTO_WALLET_MIN_USD = 10.0
 CRYPTO_ACTIVE_WINDOW = 24 * 3600
+SPORTS_SAMPLE_LOOKBACK = 48 * 3600
 MAX_CRYPTO_REPLACEMENTS_PER_RUN = 100
 # Most recent four BTC/ETH/SOL/XRP 5m windows and two 15m windows.
 CRYPTO_WINDOWS = (("5m", 300, 4), ("15m", 900, 2))
-CRYPTO_ASSETS = ("btc", "eth", "sol", "xrp")
+CRYPTO_ASSETS = ("btc",)
+SPORTS_LEAGUES = ("nba", "nfl", "nhl", "mlb", "wnba", "ncaa",
+                  "soccer", "tennis", "mma", "ufc", "f1", "golf")
+SPORTS_MARKETS_LIMIT = 120
+SPORTS_ACTIVE_WINDOW = 48 * 3600
+SPORTS_GAME_HORIZON = 7 * 86400
+SPORTS_INPLAY_GRACE = 8 * 3600
 MID_LOW = 0.15
 MID_HIGH = 0.85
 EXPENSIVE = 0.95
