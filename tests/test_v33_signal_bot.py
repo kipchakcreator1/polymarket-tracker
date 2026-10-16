@@ -862,5 +862,19 @@ class BotTests(unittest.TestCase):
 
 
 
+    def test_hourly_heartbeat_records_telegram_ack_separately_from_buy(self):
+        state = bot.blank_state()
+        state["sent"][W + "|" + COND + "|" + TOKEN] = NOW-4000
+        with mock.patch.object(bot.v2, "send_telegram", return_value=991) as sender:
+            self.assertTrue(bot.send_quiet_status(state, NOW, 0, 250))
+            sender.assert_called_once()
+        ack = state["last_telegram_acceptance"]
+        self.assertEqual(ack["kind"], "status")
+        self.assertEqual(ack["message_id"], 991)
+        self.assertIn("client push/display is not verified", ack["note"])
+        self.assertNotIn("alerts_sent", state["counters"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
