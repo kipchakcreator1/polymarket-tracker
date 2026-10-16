@@ -44,12 +44,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 'Audit-gated v3.3 live bot tests - 75 scenarios and crypto topic filter'
+      - name: 'Audit-gated v3.3 sports-first and BTC-only signal tests'
         env:
           PYTHONPATH: .
           # Test under the same minimum source BUY as the live process.
           V33_MIN_TRADE_USD: '35'
-          V33_MONITOR_MAX: '250'
+          V33_MONITOR_MAX: '300'
           V33_MAX_ALERTS: '10'
         run: |
           python -m py_compile tools/v33_signal_bot.py
@@ -62,10 +62,10 @@ jobs:
           TELEGRAM_V32_BOT_TOKEN: ${{ secrets.TELEGRAM_V32_BOT_TOKEN }}
           TELEGRAM_V33_BOT_TOKEN: ${{ secrets.TELEGRAM_V33_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          V33_MONITOR_MAX: '250'
-          # Only same-day crypto markets; suppress movies, celebrities,
-          # year-out questions, and unrelated entertainment markets.
-          V33_MARKET_FOCUS: 'crypto_short'
+          V33_MONITOR_MAX: '300'
+          # Sports games first; BTC only from crypto.
+          # No altcoins, politics, movies or distant markets.
+          V33_MARKET_FOCUS: 'sports_btc'
           # Silent if no verified BUY instead of hourly Telegram noise.
           V33_QUIET_STATUS_ENABLED: '0'
           # Favor user-requested active Bitcoin 5-minute wallet, but keep
@@ -144,7 +144,9 @@ jobs:
           data = json.load(open("research/v33_signal_state.json"))
           last = data.get("last_run") or {}
           print("- Wallets scanned:", last.get("watching", "?"))
-          print("- Recently crypto-active qualified wallets:",
+          print("- Recently sports-active qualified wallets:",
+                last.get("sports_recent_watching", "not available"))
+          print("- Recently BTC-active qualified wallets:",
                 last.get("crypto_recent_watching", "not available"))
           print("- Total BUY Telegram API accepts:",
                 data.get("counters", {}).get("alerts_sent", 0))
