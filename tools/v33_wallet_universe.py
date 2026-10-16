@@ -245,7 +245,7 @@ def incorporate_sample(state, observations, now):
                             api.asfloat(m.get("winrate")) >= .70 and
                             api.asfloat(m.get("recent_realized_pnl")) >= 100 and
                             isinstance(m.get("profit_factor"), (int, float)) and
-                            m["profit_factor"] >= 1.15)))
+                            m["profit_factor"] >= 1.15))))
                 if not eviction_candidates:
                     continue
                 _, _, _, evicted = eviction_candidates.pop(0)
