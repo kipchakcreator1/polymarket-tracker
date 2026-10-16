@@ -276,6 +276,116 @@ def candidate_positions(rows):
     return sorted(result, key=lambda x: -x[2])
 
 
+def fetch_position_history(wallet):
+    """Snapshot CLOSED plus still-held resolved positions, not just profitable exits.
+
+    Pagination is exhaustive only up to this bounded limit. Never fill in the
+    omitted tail as losses or wins, or call it the 30 latest settlements.
+    """
+    rows = []
+    complete = True
+    for status in ("CLOSED", "REDEEMABLE"):
+        cursor = None
+        seen = set()
+        for _ in range(3):
+            params = {"user": wallet, "status": status, "limit": 125,
+                      "sort_by": "TIMESTAMP", "sort_direction": "DESC"}
+            if cursor:
+                params["cursor"] = cursor
+            result = api.request_json("/v2/positions", params, tries=2, timeout=14)
+            if not (isinstance(result, dict) and
+                    isinstance(result.get("data"), list) and
+                    isinstance(result.get("pagination"), dict)):
+                raise ValueError("Incomplete position history")
+            for value in result["data"]:
+                if (not isinstance(value, dict) or
+                        str(value.get("proxy_wallet") or "").lower() != wallet):
+                    raise ValueError("Position wallet mismatch")
+                if str(value.get("status") or "").upper() != status:
+                    raise ValueError("Position status mismatch")
+                rows.append(value)
+            page = result["pagination"]
+            if page.get("has_more") is False:
+                break
+            nxt = page.get("next_cursor")
+            if page.get("has_more") is not True or not isinstance(nxt, str) or not nxt or nxt in seen:
+                raise ValueError("Invalid position history cursor")
+            seen.add(nxt)
+            cursor = nxt
+        else:
+            complete = False
+    return rows, complete
+
+
+def position_truth_sample(wallet, gamma_cache, resolution_cache):
+    """Verified event-outcome accuracy from position history, NOT realized ROI.
+
+    Query resolved-but-unredeemed holdings too: omitting them can systematically
+    erase losers. Group by *condition*, not fills. A wallet holding opposite
+    outcomes in one condition is an ambiguous directional predictor.
+    """
+    rows, complete = fetch_position_history(wallet)
+    markets = defaultdict(list)
+    for pos in rows:
+        condition = safe_condition(pos.get("condition_id"))
+        token = str(pos.get("token_id") or "")
+        if condition and token:
+            markets[condition].append(pos)
+    resolved = []
+    status_counts = defaultdict(int)
+    for condition, entries in list(markets.items())[:220]:
+        tokens = {str(v.get("token_id")) for v in entries}
+        if len(tokens) != 1:
+            status_counts["opposite_positions"] += 1
+            continue
+        pos = entries[0]
+        token = next(iter(tokens))
+        try:
+            label, settled = classify(condition, token, gamma_cache, resolution_cache)
+        except Exception:
+            label, settled = "api_error", None
+        status_counts[label] += 1
+        if label not in ("win", "loss") or settled is None:
+            continue
+        try:
+            first = int(pos.get("first_entry_at") or 0)
+        except (ValueError, TypeError):
+            first = 0
+        if not 0 < first <= settled:
+            status_counts["entry_time_unverified"] += 1
+            continue
+        closed = any(str(x.get("status") or "") == "CLOSED" for x in entries)
+        realized = pos.get("realized_pnl")
+        realized_positive = (isinstance(realized, (int, float))
+                             and not isinstance(realized, bool)
+                             and math.isfinite(realized) and realized > 0)
+        resolved.append({
+            "condition": condition, "token_id": token,
+            "resolved_at": settled, "first_entry_at": first,
+            "direction": label, "closed": closed,
+            "profitable_closed_wrong_direction":
+                bool(label == "loss" and closed and realized_positive)})
+    # No positions booked in an event are treated as a missing match, NOT a loss.
+    resolved.sort(key=lambda x: -x["resolved_at"])
+    sampled = resolved[:MAX_WALLET_OBSERVATIONS]
+    wins = sum(x["direction"] == "win" for x in sampled)
+    n = len(sampled)
+    return {
+        "position_rows_scanned": len(rows),
+        "position_history_complete": complete,
+        "resolved_sports_sample": n,
+        "wins": wins, "losses": n - wins,
+        "observed_directional_win_fraction": round(wins / n, 4) if n else None,
+        "certified_sample": complete and n >= 20,
+        "profitable_closed_wrong_direction": sum(
+            x["profitable_closed_wrong_direction"] for x in sampled),
+        "status_counts": dict(status_counts),
+        "events": sampled,
+        "caveat": "Sample ordered by official settled_at. Incomplete positions "
+                  "means it may omit more recent settled picks; not a full history."
+    }
+
+
 def sample_wallet(wallet, gamma_cache, resolution_cache):
     trades, complete = fetch_wallet_trades(wallet)
     picks = candidate_positions(trades)[:MAX_CONDITIONS_PER_WALLET]
@@ -365,6 +475,12 @@ def main():
     for wallet in wallets:
         try:
             wallet_results[wallet] = sample_wallet(wallet, gamma_cache, resolution_cache)
+            try:
+                wallet_results[wallet]["position_truth"] = position_truth_sample(
+                    wallet, gamma_cache, resolution_cache)
+            except Exception as exc:
+                wallet_results[wallet]["position_truth_error"] = (
+                    type(exc).__name__ + ": " + str(exc)[:90])
             print("TRUE SPORTS SAMPLE:", wallet[:12],
                   wallet_results[wallet]["resolved_sports_sample"],
                   "complete=", wallet_results[wallet]["trade_history_complete"],
