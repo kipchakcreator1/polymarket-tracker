@@ -499,6 +499,41 @@ def fast_market_reason(group, now):
     return None
 
 
+def official_sport_market(market):
+    """Require official Gamma game data or a sports category/league tag."""
+    if not isinstance(market, dict):
+        return False
+    if market.get("sportsMarketType") or market.get("gameId"):
+        return True
+    for value in (market.get("category"), market.get("subcategory")):
+        if SPORTS_CATEGORY.fullmatch(str(value or "").strip()):
+            return True
+    for key in ("tags", "categories"):
+        tags = market.get(key) or []
+        if isinstance(tags, dict):
+            tags = [tags]
+        if not isinstance(tags, list):
+            continue
+        for tag in tags:
+            if isinstance(tag, dict):
+                if any(SPORTS_CATEGORY.fullmatch(str(tag.get(k) or "").strip())
+                       for k in ("label", "slug", "name")):
+                    return True
+            elif SPORTS_CATEGORY.fullmatch(str(tag).strip()):
+                return True
+    return False
+
+
+def gamma_epoch(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return int(dt.timestamp()) if dt.tzinfo else None
+    except (ValueError, OverflowError):
+        return None
+
+
 def market_focus_reason(state, group, now):
     """Allow only demonstrably short-horizon BTC/ETH/SOL/XRP markets.
 
