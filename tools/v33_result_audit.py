@@ -84,7 +84,7 @@ def official_sports(market):
     if not isinstance(market, dict):
         return False
     return bot.official_sport_market(market) or any(
-        bot.official_sport_market(e) for e in market.get("events", [])
+        bot.official_sport_market(e) for e in (market.get("events") or [])
         if isinstance(e, dict))
 
 
