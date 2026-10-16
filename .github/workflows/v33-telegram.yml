@@ -44,13 +44,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 'Audit-gated v3.3 sports/BTC BUY-only alerts and conflict mute regression'
+      - name: 'Audit-gated sports-first BUY ordering, per-topic telemetry and conflict mute'
         env:
           PYTHONPATH: .
           # Test under the same minimum source BUY as the live process.
           V33_MIN_TRADE_USD: '35'
           V33_MONITOR_MAX: '300'
           V33_MAX_ALERTS: '10'
+          V33_MARKET_FOCUS: 'sports_btc'
         run: |
           python -m py_compile tools/v33_signal_bot.py
           python -m unittest discover -s tests -p 'test_v33_signal_bot.py' -v
@@ -151,8 +152,13 @@ jobs:
                 last.get("sports_recent_watching", "not available"))
           print("- Recently BTC-active qualified wallets:",
                 last.get("crypto_recent_watching", "not available"))
-          print("- Total BUY Telegram API accepts:",
-                data.get("counters", {}).get("alerts_sent", 0))
+          counts = data.get("counters", {})
+          print("- Total BUY Telegram API accepts:", counts.get("alerts_sent", 0))
+          print("- SPORTS BUY accepts after topic telemetry enabled:",
+                counts.get("alerts_sports", 0))
+          print("- BTC BUY accepts after topic telemetry enabled:",
+                counts.get("alerts_btc", 0))
+          print("- The historic BUY total predates per-topic classification.")
           print("- Latest rejection counts:", last.get("this_poll", {}))
           print("- Telegram server acceptance is not proof of phone notification.")
           PY
