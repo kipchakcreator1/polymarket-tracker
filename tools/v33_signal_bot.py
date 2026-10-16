@@ -5,6 +5,7 @@ Only reads public Polymarket data. No real orders, wallet keys, or changes to
 v3.1/v3.2. Closed-position win rate is NOT forecasting accuracy.
 """
 import concurrent.futures
+import datetime
 import html
 import json
 import math
@@ -48,6 +49,14 @@ PRIORITY_WALLETS = frozenset(w.strip().lower() for w in
     os.getenv("V33_PRIORITY_WALLETS", "").split(",")
     if v2.WALLET_RE.fullmatch(w.strip().lower()))
 FAST_5M_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-5m-(\d+)\b", re.I)
+# No celebrity/movie/politics/year-out predictions in the live Telegram feed.
+MARKET_FOCUS = os.getenv("V33_MARKET_FOCUS", "crypto_short").strip().lower()
+CRYPTO_NAME_RE = re.compile(r"(?<![a-z0-9])(?:bitcoin|btc|ethereum|eth|solana|sol|xrp|ripple)(?![a-z0-9])", re.I)
+CRYPTO_UPDOWN_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-(5m|15m|1h|4h)-(\d{10})\b", re.I)
+CRYPTO_WINDOW_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400}
+MAX_MARKET_HORIZON = 24 * 3600
+MARKET_FOCUS_CACHE_SECONDS = 900
+QUIET_STATUS_ENABLED = os.getenv("V33_QUIET_STATUS_ENABLED", "0") == "1"
 MAX_AGE = 300
 MAX_CATCHUP = 7200
 # Re-evaluate recent closed-position results at alert time, not only at
@@ -128,6 +137,7 @@ def blank_state():
     return {"version": VERSION, "cursors": {}, "seen": {},
             "pending": {}, "sent": {}, "counters": {},
             "recent_form_cache": {}, "active_form_cache": {}, "politics_cache": {},
+            "market_focus_cache": {},
             "conflicting_markets": {}, "conflict_alerts": {},
             "boot_notified": False}
 
@@ -147,6 +157,8 @@ def load_state():
         raise ValueError("Corrupted v3.3 active form cache")
     if not isinstance(value.setdefault("politics_cache", {}), dict):
         raise ValueError("Corrupted v3.3 politics cache")
+    if not isinstance(value.setdefault("market_focus_cache", {}), dict):
+        raise ValueError("Corrupted v3.3 market focus cache")
     if not isinstance(value.setdefault("conflicting_markets", {}), dict):
         raise ValueError("Corrupted v3.3 conflict cache")
     if not isinstance(value.setdefault("conflict_alerts", {}), dict):
@@ -478,6 +490,69 @@ def fast_market_reason(group, now):
     return None
 
 
+def market_focus_reason(state, group, now):
+    """Allow only demonstrably short-horizon BTC/ETH/SOL/XRP markets.
+
+    The early whitelist rejects entertainment/future-year content before
+    expensive API verification; non-standard crypto markets need an official
+    Gamma close time within 24h, never just a suggestive question/title.
+    """
+    if MARKET_FOCUS == "all":
+        return None
+    if MARKET_FOCUS != "crypto_short":
+        raise ValueError("Unsupported v3.3 market focus")
+    label = str(group.get("title") or "") + " " + str(group.get("url") or "")
+    if not CRYPTO_NAME_RE.search(label):
+        return "off_topic_market"
+    match = CRYPTO_UPDOWN_RE.search(str(group.get("url") or ""))
+    if match:
+        start = int(match.group(2))
+        if not 1600000000 <= start <= 2100000000:
+            return "market_bad_timestamp"
+        remaining = start + CRYPTO_WINDOW_SECONDS[match.group(1).lower()] - now
+        if remaining <= 90:
+            return "crypto_market_too_late"
+        if remaining > MAX_MARKET_HORIZON:
+            return "crypto_market_too_far"
+        return None
+    condition = str(group.get("condition") or "").lower()
+    cache = state.setdefault("market_focus_cache", {})
+    record = cache.get(condition)
+    end = None
+    if (isinstance(record, dict) and
+            0 <= now - int(record.get("checked_at") or 0) <= MARKET_FOCUS_CACHE_SECONDS):
+        end = record.get("end")
+    if end is None:
+        markets = v2.request_json("/markets", {"condition_ids": condition},
+                                  base=GAMMA_API, tries=2, timeout=12)
+        if not isinstance(markets, list):
+            raise ValueError("Gamma market horizon unavailable")
+        matches = [m for m in markets if isinstance(m, dict) and
+                   str(m.get("conditionId") or "").lower() == condition]
+        if len(matches) != 1:
+            raise ValueError("Missing/ambiguous Gamma market horizon")
+        m = matches[0]
+        date_value = m.get("endDate") or m.get("endDateIso")
+        if not isinstance(date_value, str):
+            return "market_end_unverified"
+        try:
+            end_dt = datetime.datetime.fromisoformat(
+                date_value.replace("Z", "+00:00"))
+            if end_dt.tzinfo is None:
+                return "market_end_unverified"
+            end = int(end_dt.timestamp())
+        except (ValueError, OverflowError):
+            return "market_end_unverified"
+        cache[condition] = {"checked_at": now, "end": end}
+    if not isinstance(end, (int, float)):
+        return "market_end_unverified"
+    if end - now <= 90:
+        return "crypto_market_too_late"
+    if end - now > MAX_MARKET_HORIZON:
+        return "crypto_market_too_far"
+    return None
+
+
 def political_labels(obj):
     """Classify event/market category, tags and public market text."""
     if not isinstance(obj, dict):
@@ -669,6 +744,13 @@ def notify_opposing_wallets(state, selected, now):
     for group in state["pending"].values():
         if group["wallet"] not in selected or fast_market_reason(group, now):
             continue
+        try:
+            if market_focus_reason(state, group, now):
+                continue
+        except Exception as exc:
+            mark(state, "market_focus_request_error")
+            print("V33 MARKET FOCUS WARNING:", type(exc).__name__, str(exc)[:80])
+            continue
         cand, reason = candidate(group, now)
         if reason is None:
             by_market.setdefault(group["condition"], []).append((group, cand))
@@ -731,6 +813,16 @@ def deliver(state, selected, now, *, clock=None):
     for key, group in sorted(list(state["pending"].items()),
                              key=signal_sort_key):
         checked_at = max(now, int(clock())) if clock else now
+        try:
+            focus_reason = market_focus_reason(state, group, checked_at)
+        except Exception as exc:
+            mark(state, "market_focus_request_error")
+            print("V33 MARKET FOCUS WARNING:", type(exc).__name__, str(exc)[:80])
+            continue
+        if focus_reason:
+            mark(state, focus_reason)
+            del state["pending"][key]
+            continue
         cand, reason = candidate(group, checked_at)
         if reason == "small_trade" and (checked_at - int(
                 group.get("first", group["last"])) <= AGGREGATE_BUY_WINDOW):
@@ -808,6 +900,8 @@ def deliver(state, selected, now, *, clock=None):
         # AGAIN just before invoking Telegram (not only at poll start).
         send_at = max(checked_at, int(clock())) if clock else checked_at
         late_reason = fast_market_reason(group, send_at)
+        if not late_reason:
+            late_reason = market_focus_reason(state, group, send_at)
         if send_at - int(group["last"]) > MAX_AGE:
             late_reason = "expired_before_send"
         if late_reason:
@@ -909,7 +1003,7 @@ def main():
         raise RuntimeError("All wallet queries failed")
     conflicts = notify_opposing_wallets(state, selected, now)
     sent = deliver(state, selected, now, clock=time.time)
-    if sent == 0:
+    if QUIET_STATUS_ENABLED and sent == 0:
         try:
             send_quiet_status(state, now, fills, len(selected))
         except Exception as exc:
@@ -939,6 +1033,10 @@ def main():
     state["conflict_alerts"] = {
         k: v for k, v in state["conflict_alerts"].items()
         if 0 <= now - int(v) <= 86400}
+    state["market_focus_cache"] = {
+        k: v for k, v in state["market_focus_cache"].items()
+        if isinstance(v, dict) and
+        0 <= now - int(v.get("checked_at") or 0) <= MARKET_FOCUS_CACHE_SECONDS}
     state["politics_cache"] = {
         k: v for k, v in state["politics_cache"].items()
         if isinstance(v, dict) and
