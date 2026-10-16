@@ -694,13 +694,13 @@ def notify_opposing_wallets(state, selected, now):
         group_a, cand_a = a
         group_b, cand_b = b
         slug = html.escape(group_a.get("url") or "", quote=True)
-        url = f'<a href="{slug}">Рынок</a>\\n' if slug else ""
-        msg = ("⚠️ <b>v3.3 • КОНФЛИКТ кошельков</b>\\n"
-               + "🏷 " + html.escape(group_a["title"]) + "\\n"
+        url = f'<a href="{slug}">Рынок</a>\n' if slug else ""
+        msg = ("⚠️ <b>v3.3 • КОНФЛИКТ кошельков</b>\n"
+               + "🏷 " + html.escape(group_a["title"]) + "\n"
                + "🔴 " + html.escape(group_a["wallet"][:12]) + " → "
-                 + html.escape(cand_a["outcome"]) + f" (${cand_a['usd']:,.0f})\\n"
+                 + html.escape(cand_a["outcome"]) + f" (${cand_a['usd']:,.0f})\n"
                + "🔵 " + html.escape(group_b["wallet"][:12]) + " → "
-                 + html.escape(cand_b["outcome"]) + f" (${cand_b['usd']:,.0f})\\n"
+                 + html.escape(cand_b["outcome"]) + f" (${cand_b['usd']:,.0f})\n"
                + url
                + "⛔ Противоположные BUY наблюдались в одном рынке. "
                  "Ликвидность и копируемость этих трейдов НЕ подтверждены. "
