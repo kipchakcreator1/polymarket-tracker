@@ -26,6 +26,12 @@ SCORE_BATCH = max(0, min(200, int(os.getenv("V33_SCORE_BATCH", "100"))))
 PAGE_SIZE = 50
 SCORE_REFRESH = 7 * 86400
 RECENT = 7 * 86400
+CRYPTO_LOOKBACK = 3600
+CRYPTO_WALLET_MIN_USD = 10.0
+CRYPTO_ACTIVE_WINDOW = 24 * 3600
+# Most recent four BTC/ETH/SOL/XRP 5m windows and two 15m windows.
+CRYPTO_WINDOWS = (("5m", 300, 4), ("15m", 900, 2))
+CRYPTO_ASSETS = ("btc", "eth", "sol", "xrp")
 MID_LOW = 0.15
 MID_HIGH = 0.85
 EXPENSIVE = 0.95
@@ -119,6 +125,52 @@ def fetch_markets(now):
     return choose_markets(markets, now, MAX_MARKETS), len(markets), errors
 
 
+def discover_short_crypto_markets(now):
+    """Find *actual* recent 5m/15m markets by deterministic Gamma slug.
+
+    The generic /markets page ranks broad markets and may not include these
+    recurring crypto rounds. A missing/failed event is not fabricated.
+    """
+    candidates = []
+    for asset in CRYPTO_ASSETS:
+        for duration, seconds, lookback in CRYPTO_WINDOWS:
+            start = (now // seconds) * seconds
+            for i in range(lookback):
+                tick = start - i * seconds
+                candidates.append(asset + "-updown-" + duration + "-" + str(tick))
+    def lookup(slug):
+        raw = api.request_json("/events", {"slug": slug},
+                               base=discovery.GAMMA, tries=2, timeout=10)
+        if not isinstance(raw, list):
+            raise ValueError("Gamma crypto events not list")
+        selected = [x for x in raw if isinstance(x, dict) and
+                    x.get("slug") == slug]
+        if len(selected) != 1:
+            return None
+        matches = selected[0].get("markets") or []
+        if not isinstance(matches, list) or len(matches) != 1:
+            return None
+        condition = str(matches[0].get("conditionId") or "").lower()
+        if not discovery.CONDITION_RE.fullmatch(condition):
+            return None
+        return {"condition": condition, "vol": 0.0,
+                "crypto_short": True, "slug": slug}
+    found = {}
+    errors = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {pool.submit(lookup, slug): slug for slug in candidates}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                market = future.result()
+                if market is not None:
+                    found[market["condition"]] = market
+            except Exception as exc:
+                errors += 1
+                print("V33 CRYPTO DISCOVERY ERROR:", type(exc).__name__,
+                      str(exc)[:80])
+    return list(found.values()), errors
+
+
 def fetch_market_trades(market, now):
     condition = market["condition"]
     response = api.request_json(
@@ -139,7 +191,8 @@ def fetch_market_trades(market, now):
         if not valid_wallet(wallet):
             continue
         data = stats.setdefault(wallet, {"rows": 0, "mid_buys": 0,
-                                         "expensive_buys": 0, "buy_rows": 0})
+                                         "expensive_buys": 0, "buy_rows": 0,
+                                         "crypto_last_buy": 0})
         data["rows"] += 1
         if str(row.get("side") or "").upper() == "BUY":
             price = api.asfloat(row.get("price"), -1)
@@ -147,6 +200,15 @@ def fetch_market_trades(market, now):
                 data["buy_rows"] += 1
                 data["mid_buys"] += int(MID_LOW <= price <= MID_HIGH)
                 data["expensive_buys"] += int(price >= EXPENSIVE)
+                # Observed source size is shares, so use size*price in USD.
+                # Timestamp comes from the ACTUAL TRADE; re-reading one
+                # market in a later research run cannot refresh recency.
+                if (market.get("crypto_short") and
+                        now - CRYPTO_LOOKBACK <= timestamp <= now+60 and
+                        MID_LOW <= price <= MID_HIGH and
+                        api.asfloat(row.get("size")) * price >= CRYPTO_WALLET_MIN_USD):
+                    data["crypto_last_buy"] = max(data["crypto_last_buy"],
+                                                  timestamp)
     return len(response["data"]), stats
 
 
@@ -155,7 +217,8 @@ def incorporate_sample(state, observations, now):
     # Diversity (distinct sampled markets) first. Do not assume trading
     # volume or closed-position PnL implies prediction skill.
     ranked = sorted(observations.items(),
-                    key=lambda kv: (-kv[1]["markets"], -kv[1]["mid_buys"],
+                    key=lambda kv: (-int(kv[1].get("crypto_last_buy") or 0),
+                                    -kv[1]["markets"], -kv[1]["mid_buys"],
                                     -kv[1]["rows"], kv[0]))
     added = 0
     for wallet, sample in ranked:
@@ -167,6 +230,8 @@ def incorporate_sample(state, observations, now):
             added += 1
         item = wallets[wallet]
         item["last_market_seen"] = now
+        if int(sample.get("crypto_last_buy") or 0) > int(item.get("crypto_last_buy") or 0):
+            item["crypto_last_buy"] = int(sample["crypto_last_buy"])
         # These are SAMPLED rows, potentially repeated next run. They are
         # descriptive price observations, not unique trades or backtest PnL.
         for key in ("mid_buys", "expensive_buys", "buy_rows"):
@@ -184,7 +249,8 @@ def due_for_scoring(wallets, now):
         if now >= retry_after and (last == 0 or now - last > SCORE_REFRESH):
             pending.append((address, item))
     # Find history for newly discovered wallets before refreshing old records.
-    pending.sort(key=lambda x: (bool(x[1].get("score_checked_at")),
+    pending.sort(key=lambda x: (-int(x[1].get("crypto_last_buy") or 0),
+                                bool(x[1].get("score_checked_at")),
                                 int(x[1].get("score_checked_at") or 0),
                                 -int(x[1].get("mid_buys_sampled", 0)), x[0]))
     return [address for address, _ in pending[:SCORE_BATCH]]
@@ -238,8 +304,10 @@ def eligible_research_wallets(wallets, now, limit=250):
             "sampled_midprice_buys_nonunique": mid,
             "sampled_expensive_buys_nonunique": expensive,
             "price_profile": "candidate" if price_supported else "unverified",
-            "last_market_seen": m.get("last_market_seen")})
+            "last_market_seen": m.get("last_market_seen"),
+            "last_crypto_buy": int(m.get("crypto_last_buy") or 0)})
     candidates.sort(key=lambda c: (
+        not (0 <= now - int(c.get("last_crypto_buy") or 0) <= CRYPTO_ACTIVE_WINDOW),
         c["price_profile"] != "candidate",
         -min(c["sampled_midprice_buys_nonunique"], 30),
         -min(c["profit_factor"], 5),
@@ -261,6 +329,13 @@ def main():
     state = load_universe(now)
     before = len(state["wallets"])
     selected, pool_size, gamma_errors = fetch_markets(now)
+    crypto_markets, crypto_gamma_errors = discover_short_crypto_markets(now)
+    known = {m["condition"]: m for m in selected}
+    for m in crypto_markets:
+        if m["condition"] in known:
+            known[m["condition"]]["crypto_short"] = True
+        else:
+            selected.append(m)
     if not selected:
         raise RuntimeError("No valid active markets from Gamma")
     observations = collections.defaultdict(lambda: {
@@ -277,6 +352,8 @@ def main():
                 for address, stats in wallets.items():
                     acc = observations[address]
                     acc["markets"] += 1
+                    acc["crypto_last_buy"] = max(int(acc.get("crypto_last_buy") or 0),
+                                                 int(stats.get("crypto_last_buy") or 0))
                     for field in ("rows", "mid_buys", "expensive_buys", "buy_rows"):
                         acc[field] += stats[field]
             except Exception as exc:
@@ -293,7 +370,11 @@ def main():
         "candidates_before": before, "candidates_now": len(state["wallets"]),
         "added": added, "target": TARGET, "gamma_markets": pool_size,
         "markets_sampled": len(selected), "market_queries_ok": market_success,
-        "gamma_errors": gamma_errors, "trade_errors": trade_errors,
+        "gamma_errors": gamma_errors, "crypto_gamma_errors": crypto_gamma_errors,
+        "crypto_markets_sampled": len(crypto_markets),
+        "crypto_recent_trader_wallets": sum(0 <= now-int(m.get("crypto_last_buy") or 0) <= CRYPTO_LOOKBACK for m in observations.values()),
+        "crypto_qualified_in_shortlist": sum(0 <= now-int(m.get("last_crypto_buy") or 0) <= CRYPTO_ACTIVE_WINDOW for m in shortlist),
+        "trade_errors": trade_errors,
         "trade_rows_sampled_nonunique": rows_count,
         "unique_wallets_seen_this_run": len(observations),
         "wallet_histories_scored": scored, "history_errors": score_errors,
