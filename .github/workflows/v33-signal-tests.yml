@@ -17,11 +17,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: 'Live crypto-only filter regression - Spider-Man excluded, BTC 5m preserved'
+      - name: 'Sports-first ordering + BTC-only guards + topic alert telemetry'
         env:
           PYTHONPATH: .
           V33_PRIORITY_WALLETS: '0x5b6331e7ff0831a3fe2ed12004747db1a9c911a4'
-          V33_MONITOR_MAX: '250'
+          V33_MONITOR_MAX: '300'
+          V33_MIN_TRADE_USD: '35'
+          V33_MARKET_FOCUS: 'sports_btc'
           V33_MAX_ALERTS: '10'
         run: |
           python -m py_compile tools/v33_signal_bot.py tests/test_v33_signal_bot.py
