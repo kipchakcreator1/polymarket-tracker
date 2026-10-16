@@ -728,7 +728,7 @@ class BotTests(unittest.TestCase):
 
     def test_better_recent_form_requires_positive_pnl_and_profit_factor(self):
         # A mere 55% positive positions cannot override losing unit economics.
-        rows = [{"realizedPnl": 1}] * 11 + [{"realizedPnl": -10}] * 9
+        rows = [{"realizedPnl": 1}] * 13 + [{"realizedPnl": -10}] * 7
         with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
             self.assertEqual(bot.recent_form_reason(bot.blank_state(), W, NOW),
                              "recent_negative_expectancy_sample")
