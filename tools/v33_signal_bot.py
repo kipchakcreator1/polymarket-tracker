@@ -127,7 +127,7 @@ def blank_state():
     return {"version": VERSION, "cursors": {}, "seen": {},
             "pending": {}, "sent": {}, "counters": {},
             "recent_form_cache": {}, "active_form_cache": {}, "politics_cache": {},
-            "conflicting_markets": {},
+            "conflicting_markets": {}, "conflict_alerts": {},
             "boot_notified": False}
 
 
@@ -148,6 +148,8 @@ def load_state():
         raise ValueError("Corrupted v3.3 politics cache")
     if not isinstance(value.setdefault("conflicting_markets", {}), dict):
         raise ValueError("Corrupted v3.3 conflict cache")
+    if not isinstance(value.setdefault("conflict_alerts", {}), dict):
+        raise ValueError("Corrupted v3.3 conflict alerts")
     return value
 
 
@@ -581,6 +583,8 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
         link = f'<a href="{url}">Рынок</a> | ' + link
     recent_note = ""
     active_note = ""
+    size_note = ("ℹ️ BUY меньше $50: меньший объём исходного трейда.\n"
+                 if cand["usd"] < 50 else "")
     if active:
         active_note = (
             f"\U0001f4ca Active: {active['active_count']} позиций, "
@@ -598,6 +602,7 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
             + "\U0001f3f7 " + html.escape(group["title"]) + "\n"
             + "\U0001f3af " + html.escape(cand["outcome"]) + "\n"
             + f"\U0001f4b5 Трейд: \u0024{cand['usd']:,.0f} по {cand['source']:.3f}\n"
+            + size_note
             + f"\U0001f4ca Ask: ~{quote['price']:.3f} для гипотетических "
               f"\u0024{QUOTE_STAKE:g}; задержка {(now-group['last'])//60} мин\n"
             + f"\U0001f4c8 Прибыльные закрытые позиции: {meta['winrate']:.0%} "
@@ -646,6 +651,72 @@ def conflicting_wallet_signal(state, group, cand, now):
             conflicts[condition] = now
             return True
     return False
+
+
+def notify_opposing_wallets(state, selected, now):
+    """Report opposing fresh BUY directions as a WARNING, never copy advice.
+
+    Matching wallet trades do NOT assert either is profitable or executable.
+    Signals are verified separately and remain suppressed by the conflict gate.
+    """
+    by_market = {}
+    for group in state["pending"].values():
+        if group["wallet"] not in selected or fast_market_reason(group, now):
+            continue
+        cand, reason = candidate(group, now)
+        if reason is None:
+            by_market.setdefault(group["condition"], []).append((group, cand))
+    prior = state.setdefault("conflict_alerts", {})
+    warnings = 0
+    for condition, group_candidates in by_market.items():
+        if warnings >= 3:
+            break
+        if 0 <= now - int(prior.get(condition) or 0) <= MAX_AGE:
+            continue
+        a = b = None
+        for idx, first in enumerate(group_candidates):
+            for second in group_candidates[idx + 1:]:
+                if (first[0]["wallet"] != second[0]["wallet"] and
+                        first[1]["token"] != second[1]["token"]):
+                    a, b = first, second
+                    break
+            if a is not None:
+                break
+        if a is None:
+            continue
+        try:
+            if political_market_reason(state, a[0], now):
+                continue
+        except Exception as exc:
+            mark(state, "conflict_category_error")
+            print("V33 CONFLICT WARNING:", type(exc).__name__, str(exc)[:100])
+            continue
+        group_a, cand_a = a
+        group_b, cand_b = b
+        slug = html.escape(group_a.get("url") or "", quote=True)
+        url = f'<a href="{slug}">Рынок</a>\\n' if slug else ""
+        msg = ("⚠️ <b>v3.3 • КОНФЛИКТ кошельков</b>\\n"
+               + "🏷 " + html.escape(group_a["title"]) + "\\n"
+               + "🔴 " + html.escape(group_a["wallet"][:12]) + " → "
+                 + html.escape(cand_a["outcome"]) + f" (${cand_a['usd']:,.0f})\\n"
+               + "🔵 " + html.escape(group_b["wallet"][:12]) + " → "
+                 + html.escape(cand_b["outcome"]) + f" (${cand_b['usd']:,.0f})\\n"
+               + url
+               + "⛔ Противоположные BUY наблюдались в одном рынке. "
+                 "Ликвидность и копируемость этих трейдов НЕ подтверждены. "
+                 "Не копировать автоматически.")
+        try:
+            v2.send_telegram(msg)
+        except Exception as exc:
+            mark(state, "conflict_telegram_error")
+            print("V33 CONFLICT TELEGRAM WARNING:", type(exc).__name__,
+                  str(exc)[:100])
+            continue
+        prior[condition] = now
+        state.setdefault("conflicting_markets", {})[condition] = now
+        mark(state, "conflict_alerts_sent")
+        warnings += 1
+    return warnings
 
 
 def deliver(state, selected, now, *, clock=None):
@@ -815,6 +886,7 @@ def main():
                       type(exc).__name__, str(exc)[:100])
     if failures == len(selected):
         raise RuntimeError("All wallet queries failed")
+    conflicts = notify_opposing_wallets(state, selected, now)
     sent = deliver(state, selected, now, clock=time.time)
     if sent == 0:
         try:
@@ -843,6 +915,9 @@ def main():
     state["conflicting_markets"] = {
         k: v for k, v in state["conflicting_markets"].items()
         if 0 <= now - int(v) <= MAX_AGE}
+    state["conflict_alerts"] = {
+        k: v for k, v in state["conflict_alerts"].items()
+        if 0 <= now - int(v) <= 86400}
     state["politics_cache"] = {
         k: v for k, v in state["politics_cache"].items()
         if isinstance(v, dict) and
@@ -856,6 +931,7 @@ def main():
                          sum(w in selected for w in PRIORITY_WALLETS),
                          "new_fills": fills,
                          "initial_wallets": baseline, "alerts": sent,
+                         "conflict_alerts": conflicts,
                          "request_errors": failures, "poll_gaps": gaps,
                          "this_poll": suppression_delta,
                          "suppression_totals": state["counters"]}
