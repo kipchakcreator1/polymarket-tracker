@@ -151,10 +151,12 @@ def safe_condition(value):
     return value if bot.v32.discovery.CONDITION_RE.fullmatch(value) else None
 
 
-def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None):
+def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
+                  signal_evidence=None):
     """Keep final verified evidence, refresh unresolved rows without faking PnL."""
     saved = { (x.get("wallet"), x.get("condition"), x.get("token_id")): x
               for x in (previous_rows or []) if isinstance(x, dict) }
+    signal_evidence = signal_evidence or {}
     results = []
     work = 0
     for key, stamp in sorted(sent.items(), key=lambda x: -int(x[1])):
@@ -181,6 +183,23 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None):
             row = {"wallet": wallet, "condition": condition,
                    "token_id": token, "alert_at": stamp,
                    "settled_at": settled, "result": label}
+        # A hypothetical $5 book quote, *never* the user's actual copy fill.
+        # Only after final 0/1 payout; prior alerts lack entry-price evidence.
+        paper = signal_evidence.get(key)
+        row = dict(row)
+        if (row["result"] in ("win", "loss") and isinstance(paper, dict)
+                and paper.get("topic") == "sports"):
+            try:
+                ask = float(paper["hypothetical_copy_ask"])
+                stake = float(paper["hypothetical_copy_stake_usd"])
+                if (math.isfinite(ask) and math.isfinite(stake) and
+                        0 < ask < 1 and 0 < stake <= 100):
+                    payout = 1.0 if row["result"] == "win" else 0.0
+                    row["paper_hold_pnl_no_fees"] = round(
+                        stake * (payout / ask - 1), 4)
+                    row["paper_stake_usd"] = stake
+            except (TypeError, ValueError, KeyError):
+                pass
         results.append(row)
     return results
 
@@ -312,7 +331,13 @@ def aggregate(rows):
             "not_verified_sport": sum(x["result"] == "not_verified_sport" for x in rows),
             "push_or_partial": sum(x["result"] == "push_or_partial" for x in rows),
             "api_error": sum(x["result"] == "api_error" for x in rows),
-            "not_checked": sum(x["result"] == "not_checked" for x in rows)}
+            "not_checked": sum(x["result"] == "not_checked" for x in rows),
+            "paper_hold_sample": sum(isinstance(x.get("paper_hold_pnl_no_fees"),
+                                               (int, float)) for x in rows),
+            "paper_hold_pnl_no_fees": round(sum(
+                x.get("paper_hold_pnl_no_fees", 0) for x in rows), 4),
+            "paper_hold_total_stake": round(sum(
+                x.get("paper_stake_usd", 0) for x in rows), 4)}
 
 
 def main():
@@ -326,8 +351,15 @@ def main():
         except (ValueError, OSError):
             pass
     gamma_cache, resolution_cache = {}, {}
-    signal_rows = audit_signals(state.get("sent", {}), gamma_cache,
-        resolution_cache, previous.get("alerts", {}).get("rows"))
+    # Signal state keeps short dedupe history, while prospective quote evidence
+    # lives longer. Include both without double counting the same BUY.
+    all_sent = dict(state.get("sent", {}))
+    evidence = state.get("signal_evidence", {})
+    for key, value in evidence.items():
+        if isinstance(value, dict) and value.get("alert_at"):
+            all_sent.setdefault(key, value["alert_at"])
+    signal_rows = audit_signals(all_sent, gamma_cache, resolution_cache,
+        previous.get("alerts", {}).get("rows"), evidence)
     wallets, next_index = choose_wallets(shortlist, previous)
     wallet_results = dict(previous.get("wallets") or {})
     for wallet in wallets:
@@ -342,13 +374,16 @@ def main():
             # Failed refreshes never erase earlier results or forge wins.
     report = {"schema": "v33_true_sports_audit_1", "updated_at": now,
               "method": "v2 trades + exact Gamma token mapping + final v2 payouts; "
-                        "directional results, not realized PnL or copy ROI",
+                        "directional results; forward $5 paper HOLD only "
+                        "when actual alert-time simulated ask was stored",
               "next_wallet_index": next_index,
               "alerts": {"summary": aggregate(signal_rows), "rows": signal_rows},
               "wallets": wallet_results,
               "disclaimer": "20 resolved observations are preliminary. A partial "
                 "trade feed is explicitly not certified. Cashouts remain distinct; "
-                "past BUY prices and actual copied fills were not recorded."}
+                "past BUY prices and actual copied fills were not recorded. "
+                "Forward paper HOLD assumes settlement, excludes fees and "
+                "cannot stand in for the user's trading PnL."}
     OUTPUT_PATH.write_text(json.dumps(report, ensure_ascii=False,
                                      separators=(",", ":")) + "\n")
     print("V33 TRUE SPORTS AUDIT:", json.dumps({
