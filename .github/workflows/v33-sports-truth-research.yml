@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Prove cashouts, partial datasets and disputed outcomes cannot fake wins
+      - name: Prove confirmed payouts, cashout paradox and incomplete histories stay separate
         env:
           PYTHONPATH: .
         run: |
@@ -54,10 +54,19 @@ jobs:
           print("- Not checked this pass:", counts.get("not_checked", 0))
           print("- Category unverified/not sports:", counts["not_verified_sport"])
           print("- Research API errors:", counts["api_error"])
+          print("- Forward $5 paper-hold samples:", counts.get("paper_hold_sample", 0))
+          print("- Forward paper HOLD PnL before fees ($):",
+                counts.get("paper_hold_pnl_no_fees", 0))
           print("- Wallet samples processed:", len(report["wallets"]))
+          print("- Wallet position-history samples:", sum(
+                bool(x.get("position_truth")) for x in report["wallets"].values()))
+          print("- Verified closed-profitable but wrong-direction examples:", sum(
+                x.get("position_truth", {}).get("profitable_closed_wrong_direction", 0)
+                for x in report["wallets"].values()))
           print("- Certified complete samples >=20:", sum(
             bool(x.get("certified_sample")) for x in report["wallets"].values()))
-          print("- No historical copy ROI available: entry book prices not retained.")
+          print("- Old alert entry asks were not recorded; paper PnL is forward-only.")
+          print("- No real user fills or post-entry cashouts are assumed.")
           PY
       - name: Persist ONLY independent research outcomes
         if: success()
