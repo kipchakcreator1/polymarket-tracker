@@ -136,7 +136,8 @@ def select_wallets(shortlist, now):
                             "winrate": v2.asfloat(meta["profitable_closed_rate"]),
                             "profit_factor": v2.asfloat(meta["profit_factor"]),
                             "price_profile": meta.get("price_profile"),
-                            "last_crypto_buy": int(meta.get("last_crypto_buy") or 0)}
+                            "last_crypto_buy": int(meta.get("last_crypto_buy") or 0),
+                            "last_sports_buy": int(meta.get("last_sports_buy") or 0)}
     if not selected:
         raise RuntimeError("No qualified wallets")
     return selected
@@ -746,6 +747,8 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
                        f"{recent['positive_rate']:.0%} прибыльных; "
                        f"лузов подряд: {recent['loss_streak']}; "
                        f"PnL: ${recent['net_pnl']:+,.0f}; "
+            f"последние 5: {recent['last5_wins']}/5 прибыльных, "
+            f"PnL ${recent['last5_net_pnl']:+,.0f}; "
             f"непогашенных убыточных позиций с активностью за 24ч: "
             f"{recent['unredeemed_lost_24h']}\n")
     return ("\U0001f9ea <b>v3.3 • новый BUY-трейд</b>\n"
@@ -1126,6 +1129,9 @@ def main():
                          "new_fills": fills,
                          "crypto_recent_watching": sum(
                              0 <= now-int(meta.get("last_crypto_buy") or 0) <= 86400
+                             for meta in selected.values()),
+                         "sports_recent_watching": sum(
+                             0 <= now-int(meta.get("last_sports_buy") or 0) <= 172800
                              for meta in selected.values()),
                          "initial_wallets": baseline, "alerts": sent,
                          "conflict_alerts": conflicts,
