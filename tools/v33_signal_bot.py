@@ -571,32 +571,43 @@ def market_focus_reason(state, group, now):
     condition = str(group.get("condition") or "").lower()
     cache = state.setdefault("market_focus_cache", {})
     record = cache.get(condition)
-    end = None
-    if (isinstance(record, dict) and
+    if not (isinstance(record, dict) and record.get("focus") == MARKET_FOCUS and
             0 <= now - int(record.get("checked_at") or 0) <= MARKET_FOCUS_CACHE_SECONDS):
-        end = record.get("end")
-    if end is None:
         markets = v2.request_json("/markets", {"condition_ids": condition},
                                   base=GAMMA_API, tries=2, timeout=12)
         if not isinstance(markets, list):
-            raise ValueError("Gamma market horizon unavailable")
+            raise ValueError("Gamma market metadata unavailable")
         matches = [m for m in markets if isinstance(m, dict) and
                    str(m.get("conditionId") or "").lower() == condition]
         if len(matches) != 1:
-            raise ValueError("Missing/ambiguous Gamma market horizon")
-        m = matches[0]
-        date_value = m.get("endDate") or m.get("endDateIso")
-        if not isinstance(date_value, str):
-            return "market_end_unverified"
-        try:
-            end_dt = datetime.datetime.fromisoformat(
-                date_value.replace("Z", "+00:00"))
-            if end_dt.tzinfo is None:
-                return "market_end_unverified"
-            end = int(end_dt.timestamp())
-        except (ValueError, OverflowError):
-            return "market_end_unverified"
-        cache[condition] = {"checked_at": now, "end": end}
+            raise ValueError("Missing/ambiguous Gamma market metadata")
+        market = matches[0]
+        events = [e for e in (market.get("events") or []) if isinstance(e, dict)]
+        sports = official_sport_market(market) or any(
+            official_sport_market(e) for e in events)
+        start = gamma_epoch(market.get("gameStartTime") or market.get("eventStartTime"))
+        if start is None:
+            for event in events:
+                start = gamma_epoch(event.get("gameStartTime") or event.get("eventStartTime"))
+                if start is not None:
+                    break
+        end = gamma_epoch(market.get("endDate") or market.get("endDateIso"))
+        record = {"checked_at": now, "focus": MARKET_FOCUS,
+                  "sports": sports, "game_start": start, "end": end}
+        cache[condition] = record
+    if MARKET_FOCUS == "sports_btc" and not is_btc:
+        if not record["sports"]:
+            return "off_topic_market"
+        # endDate on sports may denote kickoff rather than settlement.
+        when = record.get("game_start") or record.get("end")
+        if not isinstance(when, (int, float)):
+            return "sports_time_unverified"
+        if when - now > SPORTS_GAME_HORIZON:
+            return "sports_game_too_far"
+        if now - when > SPORTS_INPLAY_GRACE:
+            return "sports_game_stale"
+        return None
+    end = record.get("end")
     if not isinstance(end, (int, float)):
         return "market_end_unverified"
     if end - now <= 90:
