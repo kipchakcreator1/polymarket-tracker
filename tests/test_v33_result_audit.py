@@ -75,6 +75,19 @@ class TruthTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 a.fetch_wallet_trades(W)
 
+    def test_forward_paper_hold_requires_recorded_ask(self):
+        key=W+"|"+C+"|yes"
+        prior=[{"wallet":W,"condition":C,"token_id":"yes",
+                "alert_at":1234,"result":"win","settled_at":2000}]
+        proof={key:{"topic":"sports","hypothetical_copy_ask":.5,
+                    "hypothetical_copy_stake_usd":5}}
+        with mock.patch.object(a,"classify") as remote:
+            rows=a.audit_signals({key:1234},{},{},prior,proof)
+        remote.assert_not_called()
+        self.assertAlmostEqual(rows[0]["paper_hold_pnl_no_fees"],5.0)
+        no_proof=a.audit_signals({key:1234},{},{},prior,{})
+        self.assertNotIn("paper_hold_pnl_no_fees",no_proof[0])
+
     def test_prior_resolved_alert_does_not_requery(self):
         key=W+"|"+C+"|yes"
         previous=[{"wallet":W,"condition":C,"token_id":"yes",
