@@ -1165,6 +1165,10 @@ class BotTests(unittest.TestCase):
             self.assertEqual(bot.deliver(sports, {
                 W: {"name": "", "winrate": .8}}, now), 1)
         self.assertEqual(sports["counters"]["alerts_sent"], 1)
+        evidence = sports["signal_evidence"][W+"|"+COND+"|"+TOKEN]
+        self.assertAlmostEqual(evidence["hypothetical_copy_ask"], .51)
+        self.assertEqual(evidence["hypothetical_copy_stake_usd"], bot.QUOTE_STAKE)
+        self.assertIn("NOT a filled order", evidence["note"])
         self.assertEqual(sports["counters"]["alerts_sports"], 1)
         self.assertNotIn("alerts_btc", sports["counters"])
 
