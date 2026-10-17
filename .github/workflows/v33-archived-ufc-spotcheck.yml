@@ -55,3 +55,18 @@ jobs:
           print(f"Verified UFC losers by independent V2 payout: {verified}/{len(rows)}")
           assert verified>=2, "Archived result mapping still unverified"
           PY
+      - name: Verify closed-profitability versus surviving resolved-loss inventory
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import json
+          from tools import v33_result_audit as audit
+          wallet="0x31550df5402226b825f900a31659a05d809d268e"
+          rows, complete=audit.fetch_position_history(wallet)
+          snapshot=audit.position_accounting_snapshot(rows,complete)
+          print("UFC ACCOUNTING SNAPSHOT:",json.dumps(snapshot,sort_keys=True))
+          assert snapshot["unredeemed_major_losers_100usd"]>=5, (
+              "Unexpectedly missing known UFC loss positions")
+          print("SUCCESS: closed trade profitability is not sportsbook winrate")
+          PY
