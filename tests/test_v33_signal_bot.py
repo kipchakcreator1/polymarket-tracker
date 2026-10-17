@@ -1169,6 +1169,31 @@ class BotTests(unittest.TestCase):
 
 
 
+    def test_book_verified_sports_shadow_is_not_a_buy_or_telegram(self):
+        now = 1792137600
+        state = bot.blank_state()
+        row = trade(price=.5, timestamp=now)
+        row.update(title="Lakers vs Celtics - Moneyline",
+                   event_slug="nba-lal-bos-2026")
+        bot.add_fill(state, row, now)
+        with mock.patch.object(bot, "MARKET_FOCUS", "sports_btc"), \
+             mock.patch.object(bot, "market_focus_reason", return_value=None), \
+             mock.patch.object(bot, "political_market_reason", return_value=None), \
+             mock.patch.object(bot, "check_trade",
+                 return_value=({"price":.51, "best_ask":.51},None)), \
+             mock.patch.object(bot, "recent_form_reason",
+                 return_value="recent_positive_rate_low"), \
+             mock.patch.object(bot.v2, "send_telegram") as telegram:
+            result=bot.deliver(state,{W:{"name":"","winrate":.80}},now)
+        telegram.assert_not_called()
+        self.assertEqual(result,0)
+        self.assertEqual(state["counters"].get("alerts_sent",0),0)
+        quote=next(iter(state["shadow_evidence"].values()))
+        self.assertEqual(quote["decision"],"blocked_recent")
+        self.assertEqual(quote["topic"],"sports")
+        self.assertAlmostEqual(quote["hypothetical_copy_ask"],.51)
+        self.assertNotIn("signal_evidence",quote)
+
     def test_sports_funnel_records_candidates_without_fake_buy(self):
         state = bot.blank_state()
         now = 1792137600
@@ -1238,6 +1263,8 @@ class BotTests(unittest.TestCase):
             self.assertEqual(bot.deliver(sports, {
                 W: {"name": "", "winrate": .8}}, now), 1)
         self.assertEqual(sports["counters"]["alerts_sent"], 1)
+        self.assertEqual(sports["shadow_evidence"][W+"|"+COND+"|"+TOKEN]["decision"],
+                         "sent_telegram")
         evidence = sports["signal_evidence"][W+"|"+COND+"|"+TOKEN]
         self.assertAlmostEqual(evidence["hypothetical_copy_ask"], .51)
         self.assertEqual(evidence["hypothetical_copy_stake_usd"], bot.QUOTE_STAKE)
