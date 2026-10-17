@@ -1,0 +1,54 @@
+name: v3.3 MARKETLENS Free UFC330 Backtest — NO ORDERS
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-marketlens-ufc330-backtest.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unit-test as-of historical book (NO future price leakage)
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m unittest discover -s tests -p 'test_v33_marketlens_archive.py' -v
+      - name: Read free Marketlens UFC 330 L2 and join actual wallet market IDs
+        env:
+          PYTHONPATH: .
+          V33_TRUTH_FOCUS_WALLET: '0x31550df5402226b825f900a31659a05d809d268e'
+        run: |
+          python -u tools/v33_marketlens_archive.py
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d=json.load(open('research/v33_marketlens_ufc330.json'))
+          print('### Free Marketlens UFC330 L2 archive — CC BY 4.0')
+          print('- Markets:',d['free_archive_markets'])
+          print('- Markets with historical book:',d['free_book_markets'])
+          print('- Wallet maker/taker fills in 180 days:',d['wallet_trades_180d'])
+          print('- Complete trade window:',d['wallet_trade_window_complete'])
+          print('- Wallet candidate conditions:',d['wallet_candidate_conditions'])
+          print('- EXACT wallet / archived-market condition matches:',d['exact_condition_overlaps'])
+          print('- Execution-accurate ROI:',d['execution_accurate_profit'])
+          if d['exact_condition_overlaps']==0:
+              print('- The public sample DOES NOT cover this wallet: no substituted markets.')
+          print('- Attribution: Marketlens https://marketlens.trade (CC BY 4.0).')
+          PY
+      - name: Archive machine-readable audit, never push to Telegram
+        uses: actions/upload-artifact@v4
+        with:
+          name: v33-marketlens-ufc330-real-overlap
+          path: research/v33_marketlens_ufc330.json
+          retention-days: 30
