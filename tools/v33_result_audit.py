@@ -501,7 +501,33 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
     resolved = []
     status_counts = defaultdict(int)
     markets_scanned_completely = len(markets) <= 220
-    for condition, entries in list(markets.items())[:220]:
+    # CRITICAL: fetch_position_history orders CLOSED before REDEEMABLE.
+    # Slicing the dict here systematically preferred closed positions and
+    # erased still-held loser outcomes when a wallet had >220 markets.
+    # The scan cohort must be chosen by a timestamp known BEFORE outcome,
+    # not by closed/redeemable status or positive PnL.
+    ordered_markets = []
+    for condition, entries in markets.items():
+        source_buy_at = bought.get(condition, (None, 0))[1]
+        if source_buy_at:
+            ordering_time = source_buy_at
+        else:
+            # Fallback only for exploratory unverified observations.
+            # Without an actual BUY timestamp this wallet cannot be certified.
+            observed_times = []
+            for item in entries:
+                try:
+                    observed_times.append(int(item.get("last_event_at") or 0))
+                except (ValueError, TypeError, OverflowError):
+                    pass
+            ordering_time = max(observed_times, default=0)
+        ordered_markets.append((condition, entries, ordering_time))
+    ordered_markets.sort(key=lambda x: (-x[2], x[0]))
+    scanned_statuses = defaultdict(int)
+    for condition, entries, _ in ordered_markets[:220]:
+        for status in {str(x.get("status") or "") for x in entries}:
+            scanned_statuses[status] += 1
+    for condition, entries, _ in ordered_markets[:220]:
         tokens = {str(v.get("token_id")) for v in entries}
         if len(tokens) != 1:
             status_counts["opposite_positions"] += 1
@@ -583,6 +609,8 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
         "position_history_complete": complete,
         "position_markets_total": len(markets),
         "position_market_scan_complete": markets_scanned_completely,
+        "position_scan_selection": "recent_original_BUY_across_CLOSED_and_REDEEMABLE",
+        "position_scanned_status_counts": dict(scanned_statuses),
         "matched_with_maker_inclusive_trades": confirmed_trade_window,
         "resolved_sports_sample": n,
         "wins": wins, "losses": n - wins,
