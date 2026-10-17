@@ -697,16 +697,26 @@ def choose_wallets(shortlist, previous):
     if not eligible:
         return [], 0
     offset = int(previous.get("next_wallet_index") or 0) % len(eligible)
-    focus = os.getenv("V33_TRUTH_FOCUS_WALLET", "").strip().lower()
-    old_focus = (previous.get("wallets") or {}).get(focus) or {}
-    old_events = ((old_focus.get("position_truth") or {}).get("events") or [])
-    event_schema_stale = (bool(old_events) and
-                          any("event_slug" not in e for e in old_events))
-    focus_due = (api.WALLET_RE.fullmatch(focus) and
-                 (os.getenv("V33_TRUTH_FORCE_FOCUS", "0") == "1" or
-                  event_schema_stale or
-                  now_ts() - int(old_focus.get("audited_at") or 0) >= 6*3600))
-    selected = [focus] if focus_due else []
+    # One-time schema repair: revisit previously audited wallets whose
+    # CLOSED-first scan could systematically exclude REDEEMABLE losers.
+    # Afterwards they return to a six-hour priority refresh / fair rotation.
+    important = [os.getenv("V33_TRUTH_FOCUS_WALLET", "").strip().lower()]
+    important += [v.strip().lower() for v in
+                  os.getenv("V33_TRUTH_PRIORITY_WALLETS", "").split(",")]
+    selected = []
+    for candidate in important:
+        if not api.WALLET_RE.fullmatch(candidate) or candidate in selected:
+            continue
+        old = (previous.get("wallets") or {}).get(candidate) or {}
+        selection = (old.get("position_truth") or {}).get(
+            "position_scan_selection")
+        stale_scan = selection != "recent_original_BUY_across_CLOSED_and_REDEEMABLE"
+        if (stale_scan or
+            os.getenv("V33_TRUTH_FORCE_FOCUS", "0") == "1" or
+            now_ts()-int(old.get("audited_at") or 0) >= 6*3600):
+            selected.append(candidate)
+        if len(selected) >= WALLETS_PER_RUN:
+            break
     from_rotation = 0
     while len(selected) < min(WALLETS_PER_RUN, len(eligible)):
         candidate = eligible[(offset + from_rotation) % len(eligible)]
