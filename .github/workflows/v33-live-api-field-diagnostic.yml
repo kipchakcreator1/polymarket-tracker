@@ -1,0 +1,82 @@
+name: v3.3 One-time OPEN and Loss Timestamp API Diagnostics (NO ORDERS)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-live-api-field-diagnostic.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inspect public v2 position pagination and timestamps without any Telegram
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import json,time,collections,math
+          import smart_tracker_v2 as api
+          now=int(time.time())
+          wallets=[
+            "0x300317934bfe0cc8740affc7425b0cd3772530f5",
+            "0x6b1dbe91847aa95386fc63669ff910e68469a01a",
+            "0x993700f76fb8e1fd8e0846afe3850d31f7cc4e38"
+          ]
+          for w in wallets:
+            for status in ("REDEEMABLE_LOST","OPEN"):
+              try:
+                params={"user":w,"status":status,"limit":100,
+                        "sort_by":"TIMESTAMP","sort_direction":"DESC"}
+                if status=="REDEEMABLE_LOST":
+                    params.update(include_archived="true")
+                else:
+                    params.update(filter_type="TOKENS",filter_amount="0.01")
+                reply=api.request_json("/v2/positions",params,tries=2,timeout=15)
+                rows=reply["data"]
+                values=[x.get("last_event_at") for x in rows]
+                seconds=[]
+                invalid=[]
+                for v in values:
+                    try:
+                        n=float(v)
+                        if n>=1e12:
+                            n=n/1000.
+                        if not math.isfinite(n) or n<=0 or n>now+120:
+                            invalid.append(repr(v))
+                        else:
+                            seconds.append(n)
+                    except (TypeError,ValueError):
+                        invalid.append(repr(v))
+                print("V33 API FIELD DIAG",json.dumps({
+                    "wallet":w[:14],"status":status,"rows":len(rows),
+                    "has_more":reply.get("pagination",{}).get("has_more"),
+                    "timestamps_invalid":len(invalid),
+                    "sample_bad_timestamp":invalid[:4],
+                    "sample_good_timestamp":seconds[:3],
+                    "clock":now,
+                    "first_row_keys":list(rows[0]) if rows else [],
+                    "position_status_values":dict(collections.Counter(
+                        str(x.get("status")) for x in rows)),
+                    "redeemable_values":dict(collections.Counter(
+                        str(x.get("redeemable")) for x in rows)),
+                    "first_sample_values":[{
+                        "last_event_at":x.get("last_event_at"),
+                        "entry_cost_usdc":x.get("entry_cost_usdc"),
+                        "current_size":x.get("current_size"),
+                        "event_slug":x.get("event_slug"),
+                        "title":str(x.get("title") or "")[:65],
+                        "redeemable":x.get("redeemable"),
+                        "status":x.get("status")} for x in rows[:2]]
+                },default=str))
+              except Exception as exc:
+                print("V33 FIELD FETCH ERROR",w[:14],status,
+                    type(exc).__name__,str(exc)[:180])
+          PY
