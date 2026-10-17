@@ -1,0 +1,74 @@
+name: v3.3 FAST Historical Sport Audit (NO TELEGRAM)
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-fast-retro.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v33-sports-truth-research
+  cancel-in-progress: false
+
+jobs:
+  retrospective:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify anti-bias ROI and process already-settled historic games
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m unittest discover -s tests -p 'test_v33_fast_retro.py' -v
+          python -u tools/v33_fast_retro.py
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          data=json.load(open("research/v33_fast_retro.json"))
+          print("### Immediate historical sports outcome research")
+          print("- Audited wallets:",data["total_wallets_in_audit"])
+          print("- Wallets with >=20 confirmed observed unique events:",
+                data["wallets_with_at_least_20_verified_unique_events"])
+          print("- Fully certified wallet histories:",
+                data["historically_certified_wallets"])
+          for w in data["wallets"][:6]:
+              if not w["verified_unique_events"]:
+                  continue
+              print("- Wallet",w["wallet"][:12],
+                    "verified events:",w["verified_unique_events"],
+                    "unverified final markets:",w["unverified_final_or_mapping_markets"])
+              for league,l in w["by_league"].items():
+                  print("  -",league,"W/L:",l["wins"],"/",l["losses"],
+                        "source first-BUY hold ROI before fees:",
+                        l["source_first_buy_hold_roi_no_fees"])
+          print("- Source historical fills are not the subscriber's copy prices.")
+          print("- No live BUY approval from this workflow.")
+          PY
+      - name: Save retrospectively reproducible report to research branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/v33_fast_retro.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'research(v3.3): immediate historical first-buy sport audit [skip ci]'
+            for i in 1 2 3; do
+              git fetch origin v3.3-wallet-research
+              git rebase origin/v3.3-wallet-research
+              if git push origin HEAD:v3.3-wallet-research; then
+                exit 0
+              fi
+              sleep 3
+            done
+            exit 1
+          fi
