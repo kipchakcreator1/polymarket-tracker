@@ -49,6 +49,13 @@ class CopyCohort(unittest.TestCase):
         self.assertEqual(chosen,[A,B])
         self.assertEqual(eligible,3)
 
+    def test_old_closed_first_wallet_skipped_before_any_api_price_fetch(self):
+        old=evidence()
+        old["position_truth"].pop("position_scan_selection")
+        cleaned,eligible=m.choose_wallets({"wallets":{A:old}},max_wallets=12)
+        self.assertEqual(cleaned,[])
+        self.assertEqual(eligible,0)
+
     def test_even_great_historical_price_proxy_never_approves_live(self):
         with mock.patch.object(m,"MIN_EVENTS",2):
             data=evidence()
