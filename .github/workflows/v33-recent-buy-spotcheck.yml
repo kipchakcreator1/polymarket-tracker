@@ -1,0 +1,29 @@
+name: v3.3 Newest BUY Sports Outcome Spotcheck (READ ONLY)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-recent-buy-spotcheck.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test that recently bought redeemable losers are not hidden
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m unittest discover -s tests -p 'test_v33_recent_buy_audit.py' -v
+      - name: Actual newest original BUYs, both CLOSED and REDEEMABLE, official V2 winners
+        env:
+          PYTHONPATH: .
+        run: |
+          python -u tools/v33_recent_buy_audit.py
