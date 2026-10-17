@@ -1,9 +1,9 @@
 name: v3.3 Multiwallet Sports Lag/Price Copy Audit (NO ORDERS)
 
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/v33-wallet-copy-cohort.yml']
+  schedule:
+    # Daily after the hourly V2 outcome-audit slot, subject to GitHub delays.
+    - cron: '23 9 * * *'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Tests — no fake ROI, hidden missing trades or winner-only selection
+      - name: Tests — survivor-biased pre-fix wallet data is excluded before price comparisons
         env:
           PYTHONPATH: .
         run: |
