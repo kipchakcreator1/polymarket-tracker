@@ -530,9 +530,27 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
         realized_positive = (isinstance(realized, (int, float))
                              and not isinstance(realized, bool)
                              and math.isfinite(realized) and realized > 0)
+        # The earliest observed actual source BUY is a useful benchmark,
+        # not the price a Telegram follower could have executed.
+        first_fill = None
+        if isinstance(trade_rows, list):
+            buys = [r for r in trade_rows if
+                    str(r.get("condition_id") or "").lower() == condition and
+                    str(r.get("token_id") or "") == token and
+                    r.get("side") == "BUY" and
+                    int(r.get("timestamp") or 0) == first]
+            if buys:
+                try:
+                    price = float(buys[0].get("price"))
+                    if math.isfinite(price) and 0 < price < 1:
+                        first_fill = price
+                except (ValueError, TypeError):
+                    pass
         resolved.append({
             "condition": condition, "token_id": token,
             "league": event_league(pos.get("event_slug")),
+            "event_slug": str(pos.get("event_slug") or "").lower(),
+            "source_first_buy_price": first_fill,
             "resolved_at": settled, "first_entry_at": first,
             "direction": label, "closed": closed,
             "profitable_closed_wrong_direction":
@@ -550,6 +568,8 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
     for stats in league_stats.values():
         count = stats["wins"] + stats["losses"]
         stats["verified_direction_fraction"] = round(stats["wins"] / count, 4)
+    # Source buy prices are NOT copy quotes. Leave fee/slippage-sensitive
+    # copied strategy ROI to our forward-only signal_evidence stream.
     return {
         "position_rows_scanned": len(rows),
         "position_accounting": accounting,
