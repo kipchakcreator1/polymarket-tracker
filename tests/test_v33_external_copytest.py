@@ -21,8 +21,7 @@ class LagCopyTest(unittest.TestCase):
         h=[(100, .5),(159,.91)]
         self.assertEqual(b.last_known_asof(h,130),(100,.5))
         self.assertIsNone(b.last_known_asof([(131,.8)],130))
-        self.assertIsNone(b.last_known_asof([(1,.8)],190, max_stale=180)
-                          if False else b.last_known_asof([(1,.8)],200, max_stale=180))
+        self.assertIsNone(b.last_known_asof([(1,.8)],200, max_stale=180))
     def test_unsorted_and_invalid_points_get_filtered(self):
         history={"history":[{"t":10,"p":.9},{"t":9,"p":.8},
                             {"t":50,"p":0},{"t":20,"p":1},
