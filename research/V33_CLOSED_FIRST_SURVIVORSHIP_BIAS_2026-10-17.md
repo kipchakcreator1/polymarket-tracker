@@ -70,3 +70,35 @@ A fresh complete research audit for the affected wallets is launched from
 the main-branch `v33-sports-truth-research.yml` workflow. New results must
 be compared to this prior biased baseline **before** any wallet promotion.
 No automatic Telegram/ranking change is authorized by this experiment.
+
+## Independent newest-first-BUY outcome validation on LIVE data
+
+[GitHub Actions independent 3-wallet recent BUY audit](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39016415904)
+ran against current public Data API v2. Unlike CLOSED-first history, it
+**chooses the newest 50 original BUY conditions first** based on trade
+timestamps, irrespective of PnL or position status, then attempts to
+independently verify token settlements. Zero trade execution.
+
+| Wallet | Verified WIN | Verified LOSS | Other BUYs in selected 50 | Unredeemed negative positions among those BUYs |
+| --- | ---: | ---: | ---: | ---: |
+| `0x300317934bfe0cc8740affc7425b0cd3772530f5` | 13 | 11 | 20 missing position; 6 not verified sports | 15 |
+| `0x6b1dbe91847aa95386fc63669ff910e68469a01a` | 15 | 20 | 11 not verified sports, 2 missing, 2 incomplete settlement | 26 |
+| `0x31550df5402226b825f900a31659a05d809d268e` | 30 | 16 | 3 missing position, 1 push/partial | 16 |
+
+These **ARE NOT** full sports winrates, or the last 50 *completed* sports
+events. Denominators for verified directional win fractions are 24, 35 and
+46 respectively. Unknowns are not wins and cannot be silently omitted when
+claiming fully verified signal performance. Correctness says nothing about
+copy profitability without the actual attainable historical ASK/depth.
+
+The previous older samples for two of these wallets were 30/30 and 29/30
+from a biased truncated status-first inventory. **No direct percentage
+comparison** is valid because the cohorts and selection windows differ.
+The new results demonstrate why the old confidence was spurious.
+
+Four risk-heavy wallets were set as temporary quarantine environment
+variables in the live `.github/workflows/v33-telegram.yml` on top
+of its existing general loss filters: the UFC case wallet above plus
+`0x3003...`, `0x6b1d...`, and `0xa772...`. This is a
+provisional risk block, not a finding that those wallets can never be
+profitable. Tests and reauditing are independently tracked in Actions.
