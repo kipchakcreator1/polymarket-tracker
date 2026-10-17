@@ -236,7 +236,7 @@ def safe_condition(value):
 
 
 def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
-                  signal_evidence=None):
+                  signal_evidence=None, max_checks=MAX_SIGNAL_CONDITIONS):
     """Keep final verified evidence, refresh unresolved rows without faking PnL."""
     saved = { (x.get("wallet"), x.get("condition"), x.get("token_id")): x
               for x in (previous_rows or []) if isinstance(x, dict) }
@@ -260,7 +260,7 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
             # Prevent fresh pending markets from consuming the entire hourly
             # API budget. Older still-unchecked markets must make progress.
             row = old
-        elif work >= MAX_SIGNAL_CONDITIONS:
+        elif work >= max_checks:
             row = old or {"wallet": wallet, "condition": condition,
                           "token_id": token, "alert_at": stamp,
                           "settled_at": None, "result": "not_checked"}
@@ -734,7 +734,7 @@ def main():
                    for key, value in shadow.items()
                    if isinstance(value, dict) and value.get("quoted_at")}
     shadow_rows = audit_signals(shadow_sent, gamma_cache, resolution_cache,
-        previous.get("shadows", {}).get("rows"), shadow)
+        previous.get("shadows", {}).get("rows"), shadow, max_checks=25)
     for row in shadow_rows:
         key = row["wallet"]+"|"+row["condition"]+"|"+row["token_id"]
         row["shadow_decision"] = (shadow.get(key) or {}).get("decision",
