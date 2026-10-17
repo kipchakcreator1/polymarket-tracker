@@ -161,6 +161,7 @@ def blank_state():
             "pending": {}, "sent": {}, "counters": {},
             "recent_form_cache": {}, "active_form_cache": {}, "politics_cache": {},
             "market_focus_cache": {}, "signal_evidence": {},
+            "shadow_evidence": {},
             "conflicting_markets": {}, "conflict_alerts": {},
             "boot_notified": False}
 
@@ -188,6 +189,8 @@ def load_state():
         raise ValueError("Corrupted v3.3 conflict alerts")
     if not isinstance(value.setdefault("signal_evidence", {}), dict):
         raise ValueError("Corrupted v3.3 signal evidence")
+    if not isinstance(value.setdefault("shadow_evidence", {}), dict):
+        raise ValueError("Corrupted v3.3 shadow evidence")
     return value
 
 
@@ -1023,6 +1026,21 @@ def deliver(state, selected, now, *, clock=None):
             continue
         if topic:
             mark(state, "book_verified_" + topic)
+        # Research-only candidate baseline: price observed BEFORE risk veto.
+        # It is NOT a Telegram recommendation and is NEVER a filled order.
+        # Compare rejected-source picks with sent picks after resolution.
+        if topic == "sports":
+            shadows = state.setdefault("shadow_evidence", {})
+            if dedupe not in shadows:
+                shadows[dedupe] = {
+                    "wallet": group["wallet"], "condition": group["condition"],
+                    "token_id": cand["token"], "quoted_at": checked_at,
+                    "source_trade_at": group["last"],
+                    "hypothetical_copy_ask": quote["price"],
+                    "hypothetical_copy_stake_usd": QUOTE_STAKE,
+                    "topic": "sports", "decision": "book_verified_only",
+                    "note": "SHADOW baseline, not Telegram, not filled",
+                }
         try:
             recent_reason = recent_form_reason(state, group["wallet"], checked_at)
         except Exception as exc:
@@ -1030,6 +1048,8 @@ def deliver(state, selected, now, *, clock=None):
             print("V33 RECENT FORM WARNING:", type(exc).__name__, str(exc)[:100])
             continue  # retry while trade is fresh; never send unchecked
         if recent_reason:
+            if topic == "sports":
+                state["shadow_evidence"][dedupe]["decision"] = "blocked_recent"
             mark(state, recent_reason)
             del state["pending"][key]
             continue
@@ -1042,6 +1062,8 @@ def deliver(state, selected, now, *, clock=None):
             print("V33 ACTIVE FORM WARNING:", type(exc).__name__, str(exc)[:100])
             continue  # never send when active PnL cannot be verified
         if active_reason:
+            if topic == "sports":
+                state["shadow_evidence"][dedupe]["decision"] = "blocked_active"
             mark(state, active_reason)
             del state["pending"][key]
             continue
@@ -1075,6 +1097,8 @@ def deliver(state, selected, now, *, clock=None):
             print("V33 TELEGRAM WARNING:", type(exc).__name__, str(exc)[:100])
             continue  # unsent pending trade remains available for retry
         state["sent"][dedupe] = send_at
+        if topic == "sports" and dedupe in state.get("shadow_evidence", {}):
+            state["shadow_evidence"][dedupe]["decision"] = "sent_telegram"
         if isinstance(receipt, int) and receipt > 0:
             state["last_telegram_acceptance"] = {
                 "at": send_at, "message_id": receipt, "kind": "buy",
@@ -1195,6 +1219,13 @@ def main():
         k: v for k, v in state.get("signal_evidence", {}).items()
         if isinstance(v, dict) and
         0 <= now-int(v.get("alert_at") or 0) <= 45 * 86400}
+    # Fixed bound keeps the JSON cursor checkpoint small on busy market days.
+    eligible_shadow = ((k, v) for k, v in state.get("shadow_evidence", {}).items()
+                       if isinstance(v, dict) and
+                       0 <= now-int(v.get("quoted_at") or 0) <= 45 * 86400)
+    state["shadow_evidence"] = dict(sorted(
+        eligible_shadow, key=lambda item: int(item[1]["quoted_at"]),
+        reverse=True)[:900])
     state["pending"] = {k: v for k, v in state["pending"].items()
                         if now - int(v["last"]) <= MAX_AGE}
     state["cursors"] = {k: v for k, v in state["cursors"].items()
