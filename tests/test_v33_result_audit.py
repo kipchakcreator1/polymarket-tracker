@@ -225,6 +225,23 @@ class TruthTests(unittest.TestCase):
         row["event_slug"]="will-ufc-cancel-this-year"
         self.assertEqual(a.v2_token_verdict(row,R),"not_verified_sport")
 
+    def test_ufc_accuracy_never_pooled_with_other_sports(self):
+        self.assertEqual(a.event_league("ufc-fight-night-2026"),"UFC")
+        self.assertEqual(a.event_league("nba-lal-bos-2026"),"NBA")
+        self.assertEqual(a.event_league("will-ufc-be-legal"),"UNVERIFIED")
+        row={"proxy_wallet":W,"condition_id":C,"token_id":"yes",
+             "event_slug":"ufc-fight-night-2026",
+             "status":"REDEEMABLE","redeemable":True,
+             "realized_pnl":0,"unrealized_pnl":-600}
+        with mock.patch.object(a,"fetch_position_history",
+                               return_value=([row],True)), \
+             mock.patch.object(a,"classify",
+                               return_value=("loss",1792200000)):
+            value=a.position_truth_sample(
+                W,{}, {}, {"rows":[fill()],"complete":True})
+        self.assertEqual(value["by_league"]["UFC"]["losses"],1)
+        self.assertEqual(value["by_league"]["UFC"]["verified_direction_fraction"],0)
+
     def test_v2_token_exact_join_rejects_other_condition(self):
         value={"data":[{"token_id":"yes","condition_id":"0x"+"f"*64,
                         "outcome_index":0}]}
