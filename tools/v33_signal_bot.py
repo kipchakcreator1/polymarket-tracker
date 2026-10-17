@@ -1027,7 +1027,7 @@ def deliver(state, selected, now, *, clock=None):
         if topic:
             mark(state, "book_verified_" + topic)
         # A quote timestamp, not a fill, taken after book depth was checked.
-        book_quoted_at = max(checked_at, int(clock())) if clock else checked_at
+        book_quoted_at = checked_at  # verification-start bound; no extra clock calls
         # Research-only candidate baseline: price observed BEFORE risk veto.
         # It is NOT a Telegram recommendation and is NEVER a filled order.
         # Compare rejected-source picks with sent picks after resolution.
