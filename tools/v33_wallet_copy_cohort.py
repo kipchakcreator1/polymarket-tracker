@@ -97,6 +97,10 @@ def screen_one(result, data):
     if not data.get("market_scan_complete"):
         blockers.append("truncated_sports_markets")
     pos=data.get("position_truth") or {}
+    scan_revision_ok=(pos.get("position_scan_selection")==
+        "recent_original_BUY_across_CLOSED_and_REDEEMABLE")
+    if not scan_revision_ok:
+        blockers.append("old_CLOSED_first_scan_can_hide_REDEEMABLE_losses")
     if not pos.get("position_history_complete"):
         blockers.append("incomplete_position_history")
     if not pos.get("position_market_scan_complete"):
@@ -117,7 +121,8 @@ def screen_one(result, data):
         blockers.append("missing_price_coverage")
     if result.get("history_api_errors"):
         blockers.append("history_api_errors")
-    status=("OBSERVED_POSITIVE_PRICE_PROXY" if
+    status=("INVALID_SOURCE_SCAN_ORDER" if not scan_revision_ok else
+            "OBSERVED_POSITIVE_PRICE_PROXY" if
             common_n>=MIN_EVENTS and observed is not None and observed>0 and
             coverage>=.8 else
             "OBSERVED_NEGATIVE_PRICE_PROXY" if
@@ -157,7 +162,8 @@ def compile_report(source, results, selected, eligible):
                          "copy_roi_verified":False})
         else:
             rows.append(screen_one(results[address],wallets[address]))
-    statuses={"OBSERVED_POSITIVE_PRICE_PROXY":0,
+    statuses={"INVALID_SOURCE_SCAN_ORDER":0,
+              "OBSERVED_POSITIVE_PRICE_PROXY":0,
               "OBSERVED_NEGATIVE_PRICE_PROXY":0,
               "INSUFFICIENT_PRICE_HISTORY":0,"FETCH_ERROR":0}
     for r in rows:
@@ -174,6 +180,7 @@ def compile_report(source, results, selected, eligible):
             "wallets_tested":len(selected),
             "max_events_per_wallet":paper.MAX_EVENTS,
             "lag_seconds":list(paper.LAGS_SEC),
+            "requires_unbiased_mixed_status_scan":True,
             "failure_stress":"unpriced selected events + unresolved markets set "
                              "to -100% as illustration, NOT evidence of actual ROI",
             "status_counts":statuses,
