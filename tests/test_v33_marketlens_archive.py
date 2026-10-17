@@ -43,6 +43,8 @@ class MarketLensFreeTests(unittest.TestCase):
                 x=m.evaluate(data_dir=folder)
             self.assertEqual(x["exact_condition_overlaps"],0)
             self.assertEqual(x["tested_wallet_placements"],0)
+            self.assertEqual(x["wallet_markets_with_any_fresh_book"],0)
+            self.assertEqual(x["unusable_lag_reasons"],{})
             self.assertIsNone(x["execution_accurate_profit"])
             self.assertTrue(x["control_quote"]["synthetic_control_not_wallet_entry"])
 if __name__=="__main__":
