@@ -1,0 +1,53 @@
+name: v3.3 Live Loss-Veto API Repair Proof (READ ONLY)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-loss-veto-live-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Demonstrate early hard-loss rejection avoids thousands of repeated API pages
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import time,json
+          from unittest import mock
+          from tools import v33_signal_bot as bot
+          wlist=["0x300317934bfe0cc8740affc7425b0cd3772530f5",
+                 "0x6b1dbe91847aa95386fc63669ff910e68469a01a"]
+          for wallet in wlist:
+              state=bot.blank_state()
+              now=int(time.time())
+              original=bot.v2.request_json
+              requests=[]
+              def traced(*args,**kwargs):
+                  requests.append({
+                    "path":args[0],
+                    "status":args[1].get("status") if len(args)>1 else None})
+                  return original(*args,**kwargs)
+              start=time.monotonic()
+              with mock.patch.object(bot.v2,"request_json",side_effect=traced):
+                  first=bot.recent_form_reason(state,wallet,now)
+                  before=len(requests)
+                  second=bot.recent_form_reason(state,wallet,now+20)
+              result={"wallet":wallet[:14],"reason_first":first,
+                      "reason_20sec_later":second,
+                      "public_position_pages":before,
+                      "repeat_pages_20sec_later":len(requests)-before,
+                      "elapsed_seconds":round(time.monotonic()-start,2),
+                      "cached":state["recent_form_cache"].get(wallet),
+                      "real_orders":0,"telegram_sends":0}
+              print("LIVE RISK VETO PROOF",json.dumps(result,default=str))
+          PY
