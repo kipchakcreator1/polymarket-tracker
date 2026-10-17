@@ -75,6 +75,58 @@ class TruthTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 a.fetch_wallet_trades(W)
 
+    def test_trade_history_asks_for_both_maker_and_taker_in_time_window(self):
+        now=1792200000
+        earlier=1792000000
+        with mock.patch.object(a.api, "request_json",
+             return_value={"data":[fill(timestamp=earlier)],
+                           "pagination":{"has_more":False}}) as req:
+            rows, complete=a.fetch_wallet_trades(W, now)
+        self.assertTrue(complete)
+        self.assertEqual(len(rows),1)
+        params=req.call_args.args[1]
+        self.assertEqual(params["taker_only"], "false")
+        self.assertEqual(params["start"], now-a.TRADE_LOOKBACK_DAYS*86400)
+        self.assertEqual(params["end"],now)
+
+    def test_time_window_violation_is_not_called_complete(self):
+        now=1792200000
+        old=fill(timestamp=now-a.TRADE_LOOKBACK_DAYS*86400-1)
+        with mock.patch.object(a.api,"request_json",
+             return_value={"data":[old],"pagination":{"has_more":False}}):
+            with self.assertRaisesRegex(ValueError,"ignored requested time window"):
+                a.fetch_wallet_trades(W,now)
+
+    def test_first_buy_is_not_earlier_sell_activity(self):
+        rows=[fill(side="SELL",timestamp=1791900000),
+              fill(side="BUY",timestamp=1792000000)]
+        selected=a.candidate_positions(rows)
+        self.assertEqual(selected[0][2],1792000000)
+
+    def test_position_truth_requires_trade_buy_provenance_to_certify(self):
+        closed={"proxy_wallet":W,"condition_id":C,"token_id":"yes",
+                "status":"CLOSED","first_entry_at":1791900000,
+                "realized_pnl":50}
+        with mock.patch.object(a,"fetch_position_history",
+                               return_value=([closed],True)), \
+             mock.patch.object(a,"classify",
+                               return_value=("loss",1792200000)):
+            no_trade=a.position_truth_sample(
+                W,{}, {}, {"rows":[],"complete":True})
+            matched=a.position_truth_sample(
+                W,{}, {}, {"rows":[fill(timestamp=1792000000)],"complete":True})
+        self.assertEqual(no_trade["resolved_sports_sample"],0)
+        self.assertEqual(no_trade["status_counts"]["trade_entry_unverified"],1)
+        self.assertEqual(matched["losses"],1)
+        self.assertFalse(matched["certified_sample"])
+
+    def test_redeemable_positions_include_archived_losses(self):
+        empty={"data":[],"pagination":{"has_more":False}}
+        with mock.patch.object(a.api,"request_json",
+                               side_effect=[empty,empty]) as req:
+            a.fetch_position_history(W)
+        self.assertEqual(req.call_args_list[1].args[1]["include_archived"],"true")
+
     def test_closed_profitable_position_can_be_wrong_sports_prediction(self):
         closed={"proxy_wallet":W,"condition_id":C,"token_id":"yes",
                 "status":"CLOSED","first_entry_at":1791900000,
