@@ -81,10 +81,14 @@ def analyze_wallet(wallet, data):
         "missing_or_duplicate_event_ids": problems,
         "maker_taker_window_complete": bool(data.get("trade_window_complete")),
         "position_history_complete": bool(pos.get("position_history_complete")),
-        "historical_winrate_certified": bool(data.get("certified_sample") and
-                                            pos.get("certified_sample") and
-                                            not unknowns and verified >= 30 and
-                                            not any(problems.values())),
+        "historical_winrate_certified": bool(
+            data.get("certified_sample") and pos.get("certified_sample")
+            and data.get("trade_window_complete")
+            and data.get("market_scan_complete")
+            and pos.get("position_history_complete")
+            and pos.get("position_market_scan_complete")
+            and not unknowns and verified >= 30
+            and not any(problems.values())),
         "large_unredeemed_losses": (pos.get("position_accounting") or {}).get(
             "unredeemed_major_losers_100usd"),
         "notes": "The last 30 selected verified outcomes are not necessarily "
