@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: v33-sports-truth-research
+  group: v33-fast-retro
   cancel-in-progress: false
 
 jobs:
