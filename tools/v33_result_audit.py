@@ -243,6 +243,7 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
     signal_evidence = signal_evidence or {}
     results = []
     work = 0
+    check_now = int(time.time())
     for key, stamp in sorted(sent.items(), key=lambda x: -int(x[1])):
         parts = key.split("|")
         if len(parts) != 3 or not api.WALLET_RE.fullmatch(parts[0]):
@@ -253,6 +254,11 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
         old = saved.get((wallet, condition, token))
         if old and old.get("result") in ("win", "loss", "push_or_partial",
                                           "not_verified_sport"):
+            row = old
+        elif (old and str(old.get("result") or "").startswith("unknown")
+              and 0 <= check_now-int(old.get("checked_at") or 0) < 3600):
+            # Prevent fresh pending markets from consuming the entire hourly
+            # API budget. Older still-unchecked markets must make progress.
             row = old
         elif work >= MAX_SIGNAL_CONDITIONS:
             row = old or {"wallet": wallet, "condition": condition,
@@ -266,6 +272,7 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
                 label, settled = "api_error", None
             row = {"wallet": wallet, "condition": condition,
                    "token_id": token, "alert_at": stamp,
+                   "checked_at": check_now,
                    "settled_at": settled, "result": label}
         # A hypothetical $5 book quote, *never* the user's actual copy fill.
         # Only after final 0/1 payout; prior alerts lack entry-price evidence.
@@ -722,6 +729,17 @@ def main():
             all_sent.setdefault(key, value["alert_at"])
     signal_rows = audit_signals(all_sent, gamma_cache, resolution_cache,
         previous.get("alerts", {}).get("rows"), evidence)
+    shadow = state.get("shadow_evidence") or {}
+    shadow_sent = {key: int(value.get("quoted_at"))
+                   for key, value in shadow.items()
+                   if isinstance(value, dict) and value.get("quoted_at")}
+    shadow_rows = audit_signals(shadow_sent, gamma_cache, resolution_cache,
+        previous.get("shadows", {}).get("rows"), shadow)
+    for row in shadow_rows:
+        key = row["wallet"]+"|"+row["condition"]+"|"+row["token_id"]
+        row["shadow_decision"] = (shadow.get(key) or {}).get("decision",
+                                                             "not_in_state")
+        row["not_a_telegram_signal"] = True
     wallets, next_index = choose_wallets(shortlist, previous)
     wallet_results = dict(previous.get("wallets") or {})
     for wallet in wallets:
@@ -748,6 +766,10 @@ def main():
                         "when actual alert-time simulated ask was stored",
               "next_wallet_index": next_index,
               "alerts": {"summary": aggregate(signal_rows), "rows": signal_rows},
+              "shadows": {"summary": aggregate(shadow_rows),
+                          "rows": shadow_rows,
+                          "note": "BOOK-VERIFIED baseline before final wallet risk "
+                              "checks; NEVER a Telegram pick or real execution"},
               "wallets": wallet_results,
               "disclaimer": "20 resolved observations are preliminary. A partial "
                 "trade feed is explicitly not certified. Cashouts remain distinct; "
