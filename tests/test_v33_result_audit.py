@@ -122,6 +122,42 @@ class TruthTests(unittest.TestCase):
         selected=a.candidate_positions(rows)
         self.assertEqual(selected[0][2],1792000000)
 
+    def test_closed_first_scan_must_not_hide_newer_redeemable_loss(self):
+        # Reproduces old 220-market bug: CLOSED was enumerated before
+        # REDEEMABLE, so 221 old profitable exits evicted a new $600 loss.
+        closed=[]
+        trades=[]
+        for i in range(221):
+            condition="0x"+format(i+1,"064x")
+            closed.append({"proxy_wallet":W,"condition_id":condition,
+                           "token_id":"yes","status":"CLOSED",
+                           "realized_pnl":10,"last_event_at":1000+i})
+            trade=fill(timestamp=1000+i)
+            trade["condition_id"]=condition
+            trades.append(trade)
+        bad_condition="0x"+format(9999,"064x")
+        loser={"proxy_wallet":W,"condition_id":bad_condition,
+               "token_id":"yes","status":"REDEEMABLE","redeemable":True,
+               "realized_pnl":0,"unrealized_pnl":-600,
+               "event_slug":"ufc-recent-loss-2026","last_event_at":20000}
+        bad_buy=fill(timestamp=20000)
+        bad_buy["condition_id"]=bad_condition
+        trades.append(bad_buy)
+        def lookup(condition,token,gamma,resolution):
+            return ("loss",30001) if condition==bad_condition else ("win",30000)
+        with mock.patch.object(a,"fetch_position_history",
+                               return_value=(closed+[loser],True)), \
+             mock.patch.object(a,"classify",side_effect=lookup):
+            result=a.position_truth_sample(W,{},{},
+                {"rows":trades,"complete":True})
+        self.assertFalse(result["position_market_scan_complete"])
+        self.assertEqual(result["position_markets_total"],222)
+        self.assertEqual(result["position_scanned_status_counts"]["REDEEMABLE"],1)
+        self.assertGreaterEqual(result["position_scanned_status_counts"]["CLOSED"],1)
+        self.assertEqual(result["losses"],1)
+        self.assertEqual(result["events"][0]["direction"],"loss")
+        self.assertFalse(result["certified_sample"])
+
     def test_position_truth_requires_trade_buy_provenance_to_certify(self):
         closed={"proxy_wallet":W,"condition_id":C,"token_id":"yes",
                 "status":"CLOSED","first_entry_at":1791900000,
