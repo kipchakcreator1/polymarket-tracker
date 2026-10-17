@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Prove archived UFC payouts via V2 tokens and complete maker/taker history
+      - name: Prove CLOSED-first position truncation cannot erase unredeemed UFC losses
         env:
           PYTHONPATH: .
         run: |
@@ -88,6 +88,9 @@ jobs:
           V33_TRUTH_TRADE_PAGES: '16'
           V33_TRUTH_LOOKBACK_DAYS: '180'
           V33_TRUTH_FOCUS_WALLET: '0x31550df5402226b825f900a31659a05d809d268e'
+          # Re-audit wallets with suspicious historic survivor-heavy wins
+          # after fixing CLOSED-before-REDEEMABLE 220-market truncation.
+          V33_TRUTH_PRIORITY_WALLETS: '0x300317934bfe0cc8740affc7425b0cd3772530f5,0x6b1dbe91847aa95386fc63669ff910e68469a01a,0xa772e2ca9f119162d03330f3e66c0556a2068686,0x906aff5eb0c700a1fa2dee7c1b766c3384a4714e'
           # The forced UFC check already started; normal 6-hour rechecks now.
           V33_TRUTH_FORCE_FOCUS: '0'
         run: |
