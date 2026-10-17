@@ -104,6 +104,11 @@ ACTIVE_MAX_RED_FRACTION = float(os.getenv("V33_ACTIVE_MAX_RED_FRACTION", "0.60")
 ACTIVE_MAX_DRAWDOWN = float(os.getenv("V33_ACTIVE_MAX_DRAWDOWN", "0.15"))
 QUIET_STATUS_INTERVAL = 3600  # one truthful bot-health notice/hour at most
 QUOTE_STAKE = 5
+# main() takes now before slow API verification; real quote/send timestamps
+# can be a few seconds LATER than now. A strict 0 <= now-event age erased
+# every valid paper entry in its first pass. Permit only modest clock skew.
+EVIDENCE_FUTURE_SKEW_SECONDS = 900
+
 DEST_RE = re.compile(r"^-?[0-9]{4,20}$|^@[A-Za-z][A-Za-z0-9_]{4,31}$")
 
 
@@ -192,6 +197,31 @@ def load_state():
     if not isinstance(value.setdefault("shadow_evidence", {}), dict):
         raise ValueError("Corrupted v3.3 shadow evidence")
     return value
+
+
+def keep_forward_evidence(records, now, timestamp, days=45, limit=None):
+    """Retain forward quotes created within the current poll after its now.
+
+    Do not erase a signal quoted just seconds after the beginning of the
+    monitor pass. Refuse grossly future-dated records and old unbounded JSON.
+    """
+    if not isinstance(records, dict):
+        raise ValueError("Invalid forward quote journal")
+    keep = {}
+    for key, item in records.items():
+        if not isinstance(item, dict):
+            continue
+        try:
+            age = int(now) - int(item.get(timestamp) or 0)
+        except (ValueError, TypeError, OverflowError):
+            continue
+        if -EVIDENCE_FUTURE_SKEW_SECONDS <= age <= days * 86400:
+            keep[key] = item
+    if limit is not None:
+        return dict(sorted(
+            keep.items(), key=lambda entry: int(entry[1][timestamp]),
+            reverse=True)[:limit])
+    return keep
 
 
 def save_state(state):
@@ -1227,17 +1257,12 @@ def main():
                      if v >= now - 3 * 3600}
     state["sent"] = {k: v for k, v in state["sent"].items()
                      if v >= now - 7 * 86400}
-    state["signal_evidence"] = {
-        k: v for k, v in state.get("signal_evidence", {}).items()
-        if isinstance(v, dict) and
-        0 <= now-int(v.get("alert_at") or 0) <= 45 * 86400}
-    # Fixed bound keeps the JSON cursor checkpoint small on busy market days.
-    eligible_shadow = ((k, v) for k, v in state.get("shadow_evidence", {}).items()
-                       if isinstance(v, dict) and
-                       0 <= now-int(v.get("quoted_at") or 0) <= 45 * 86400)
-    state["shadow_evidence"] = dict(sorted(
-        eligible_shadow, key=lambda item: int(item[1]["quoted_at"]),
-        reverse=True)[:900])
+    state["signal_evidence"] = keep_forward_evidence(
+        state.get("signal_evidence", {}), now, "alert_at")
+    # Keep exactly the latest bounded research-only shadow quotes, without
+    # mistakenly deleting this poll's quote at t(now)+a few seconds.
+    state["shadow_evidence"] = keep_forward_evidence(
+        state.get("shadow_evidence", {}), now, "quoted_at", limit=900)
     state["pending"] = {k: v for k, v in state["pending"].items()
                         if now - int(v["last"]) <= MAX_AGE}
     state["cursors"] = {k: v for k, v in state["cursors"].items()
