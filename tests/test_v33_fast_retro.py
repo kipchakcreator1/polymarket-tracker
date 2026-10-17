@@ -12,9 +12,11 @@ def pick(n, result, price=.6, slug=None):
 
 def wallet(events, unknown=0):
     return {"certified_sample": True, "trade_window_complete": True,
+            "market_scan_complete": True,
             "unverified_final_or_mapping_count": unknown,
             "position_truth": {"certified_sample": True,
-                "position_history_complete": True, "events": events,
+                "position_history_complete": True,
+                "position_market_scan_complete": True, "events": events,
                 "position_accounting":
                     {"unredeemed_major_losers_100usd": 18}}}
 
