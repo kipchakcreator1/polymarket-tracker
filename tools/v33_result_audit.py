@@ -304,9 +304,11 @@ def fetch_position_history(wallet):
     for status in ("CLOSED", "REDEEMABLE"):
         cursor = None
         seen = set()
-        for _ in range(3):
+        for _ in range(8):
             params = {"user": wallet, "status": status, "limit": 125,
                       "sort_by": "TIMESTAMP", "sort_direction": "DESC"}
+            if status == "REDEEMABLE":
+                params["include_archived"] = "true"
             if cursor:
                 params["cursor"] = cursor
             result = api.request_json("/v2/positions", params, tries=2, timeout=14)
@@ -334,7 +336,7 @@ def fetch_position_history(wallet):
     return rows, complete
 
 
-def position_truth_sample(wallet, gamma_cache, resolution_cache):
+def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=None):
     """Verified event-outcome accuracy from position history, NOT realized ROI.
 
     Query resolved-but-unredeemed holdings too: omitting them can systematically
@@ -342,6 +344,11 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache):
     outcomes in one condition is an ambiguous directional predictor.
     """
     rows, complete = fetch_position_history(wallet)
+    trade_snapshot = trade_snapshot or {}
+    trade_rows = trade_snapshot.get("rows")
+    confirmed_trade_window = bool(trade_snapshot.get("complete")) and isinstance(trade_rows, list)
+    bought = {condition: (token, first)
+              for condition, token, first, cashout in candidate_positions(trade_rows or [])}
     markets = defaultdict(list)
     for pos in rows:
         condition = safe_condition(pos.get("condition_id"))
@@ -350,6 +357,7 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache):
             markets[condition].append(pos)
     resolved = []
     status_counts = defaultdict(int)
+    markets_scanned_completely = len(markets) <= 220
     for condition, entries in list(markets.items())[:220]:
         tokens = {str(v.get("token_id")) for v in entries}
         if len(tokens) != 1:
@@ -364,10 +372,20 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache):
         status_counts[label] += 1
         if label not in ("win", "loss") or settled is None:
             continue
-        try:
-            first = int(pos.get("first_entry_at") or 0)
-        except (ValueError, TypeError):
-            first = 0
+        trade_entry = bought.get(condition)
+        if trade_rows is not None:
+            # The positions endpoint does not necessarily expose first_entry_at.
+            # A certified result must be backed by our own BUY fill of this
+            # exact token (never by last position activity or SELL timestamp).
+            if not trade_entry or trade_entry[0] != token:
+                status_counts["trade_entry_unverified"] += 1
+                continue
+            first = trade_entry[1]
+        else:
+            try:
+                first = int(pos.get("first_entry_at") or 0)
+            except (ValueError, TypeError):
+                first = 0
         if not 0 < first <= settled:
             status_counts["entry_time_unverified"] += 1
             continue
@@ -390,16 +408,24 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache):
     return {
         "position_rows_scanned": len(rows),
         "position_history_complete": complete,
+        "position_markets_total": len(markets),
+        "position_market_scan_complete": markets_scanned_completely,
+        "matched_with_maker_inclusive_trades": confirmed_trade_window,
         "resolved_sports_sample": n,
         "wins": wins, "losses": n - wins,
         "observed_directional_win_fraction": round(wins / n, 4) if n else None,
-        "certified_sample": complete and n >= 20,
+        "certified_sample": bool(
+            complete and markets_scanned_completely and confirmed_trade_window
+            and n >= 20 and not status_counts.get("api_error")
+            and not status_counts.get("unknown")),
         "profitable_closed_wrong_direction": sum(
             x["profitable_closed_wrong_direction"] for x in sampled),
         "status_counts": dict(status_counts),
         "events": sampled,
-        "caveat": "Sample ordered by official settled_at. Incomplete positions "
-                  "means it may omit more recent settled picks; not a full history."
+        "caveat": "Sample sorted by final settlement, aligned with BUY token. "
+                  "A certified sample requires complete time-bounded trades, "
+                  "complete position history, all checked markets, and no "
+                  "unknown resolution responses. Not an all-time winrate."
     }
 
 
