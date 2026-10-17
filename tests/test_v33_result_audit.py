@@ -196,6 +196,41 @@ class TruthTests(unittest.TestCase):
         self.assertEqual(counts["unredeemed_losers"],1)
         self.assertFalse(counts["positions_complete"])
 
+    def test_archived_ufc_market_uses_v2_token_final_index_without_gamma(self):
+        raw={"token_id":"yes","condition_id":C,"event_slug":"ufc-fight-night",
+             "outcome_index":0,"resolved":True,"closed":True,
+             "final_price":0}
+        with mock.patch.object(a,"market_data",return_value=None), \
+             mock.patch.object(a,"resolution_data",return_value=R), \
+             mock.patch.object(a,"v2_token_data",return_value=raw) as match:
+            decision, ended=a.classify(C,"yes",{},{})
+        self.assertEqual(decision,"loss")
+        self.assertIsInstance(ended,int)
+        match.assert_called_once()
+
+    def test_archived_ufc_winning_token_matches_v2_payout(self):
+        row={"token_id":"no","condition_id":C,"event_slug":"ufc-fight-night",
+             "outcome_index":1,"resolved":True,"closed":True,"final_price":1}
+        self.assertEqual(a.v2_token_verdict(row,R),"win")
+
+    def test_v2_token_refuses_bad_index_ambiguous_and_mismatched_price(self):
+        row={"token_id":"yes","condition_id":C,"event_slug":"ufc-fight-night",
+             "outcome_index":999,"resolved":True,"closed":True}
+        self.assertEqual(a.v2_token_verdict(row,R),"unknown_token_index")
+        row["outcome_index"]=0
+        row["final_price"]=1
+        self.assertEqual(a.v2_token_verdict(row,R),
+                         "unknown_final_price_mismatch")
+        row["final_price"]=0
+        row["event_slug"]="will-ufc-cancel-this-year"
+        self.assertEqual(a.v2_token_verdict(row,R),"not_verified_sport")
+
+    def test_v2_token_exact_join_rejects_other_condition(self):
+        value={"data":[{"token_id":"yes","condition_id":"0x"+"f"*64,
+                        "outcome_index":0}]}
+        with mock.patch.object(a.api,"request_json",return_value=value):
+            self.assertIsNone(a.v2_token_data(C,"yes",{}))
+
     def test_forward_paper_hold_requires_recorded_ask(self):
         key=W+"|"+C+"|yes"
         prior=[{"wallet":W,"condition":C,"token_id":"yes",
