@@ -82,3 +82,39 @@ signals nor certifies existing 71–90% general closed-position profitability as
 sports prediction accuracy. Live v3.3 remains on its existing provisional
 wallet ranking until sufficient verified per-sport outcomes and forward
 hypothetical copied-entry ROI support a controlled replacement.
+
+## Independent research ranking and shadow quotes
+
+Added `tools/v33_evidence_rank.py` and `tests/test_v33_evidence_rank.py`.
+Report: `research/v33_evidence_rank.json` in the research branch, updated
+by the hourly sports outcome workflow. **Never fed directly into Telegram.**
+
+- Count only final V2 payouts mapped to the exact purchased token, not
+  profitable CASHOUT. Require maker + taker history to be complete.
+- One event slug = at most one observation. Multiple condition markets for
+  the same sporting event are **ambiguous and excluded**, not counted as
+  extra independent wins. Missing event ID is not a free win.
+- Show observed UFC/NBA/etc accuracy and a Wilson 95% lower confidence bound,
+  only from verifiable unique resolved events. CIs describe sampling
+  uncertainty, not unrecorded failures or predictable profits.
+- Historical status requires 30 unique events, certified exact outcomes,
+  no incomplete final results, complete page reads and no severe unresolved
+  portfolio-risk cluster. It cannot independently authorize copying.
+- A separate forward-only BUY stream includes actual alert-time book quotes,
+  a hypothetical $5 hold-to-settlement result (before fees), never a
+  hypothetical historical quote reconstructed after the game.
+- A **SHADOW** quote is saved when a sports candidate passes topic, size,
+  conflict and CLOB-book checks but BEFORE wallet recent/active risk filters.
+  It is not a Telegram signal and no order is placed. Outcome audit tracks
+  this unsent baseline separately from actual alerts to evaluate false
+  positives, false negatives, and effect of filters.
+- No `copy_roi_verified` or `live_ranking_approved` is ever set from
+  only historic wallet exit PnL or shadow book observations. True user
+  realized ROI would require their actual fills, exits and fees.
+- Research writer and snapshot writer share one GitHub Actions concurrency
+  group to prevent the same JSON report being overwritten concurrently.
+
+**Current release policy:** allow existing risk-gated Telegram only as
+explicit *research* alerts. Do not claim a certified UFC winrate or guarantee
+returns; do not promote any wallet until independent out-of-sample returns
+and cohort-level calibration exist. No thresholds were loosened here.
