@@ -10,7 +10,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: v33-evidence-rank-snapshot
+  # Same lock as hourly outcome audit: never race on the same rank JSON.
+  group: v33-sports-truth-research
   cancel-in-progress: false
 
 jobs:
