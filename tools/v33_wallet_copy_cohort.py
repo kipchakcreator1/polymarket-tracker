@@ -38,6 +38,11 @@ def choose_wallets(source,max_wallets=MAX_WALLETS):
     for addr,data in wallets.items():
         if not isinstance(data,dict):
             continue
+        if (data.get("position_truth") or {}).get("position_scan_selection") != (
+                "recent_original_BUY_across_CLOSED_and_REDEEMABLE"):
+            # Old CLOSED-first history has survivor-biased reported wins.
+            # Do not even request sampled prices for such observations.
+            continue
         es,amb=qualified_event_list(data)
         if len(es)<MIN_EVENTS:
             continue
@@ -178,6 +183,11 @@ def compile_report(source, results, selected, eligible):
             "audited_wallet_population":len(wallets),
             "wallets_with_minimum_purchasable_historical_events":eligible,
             "wallets_tested":len(selected),
+            "unrepaired_prior_wallet_studies_excluded":sum(
+                isinstance(row,dict) and
+                (row.get("position_truth") or {}).get("position_scan_selection") !=
+                "recent_original_BUY_across_CLOSED_and_REDEEMABLE"
+                for row in wallets.values()),
             "max_events_per_wallet":paper.MAX_EVENTS,
             "lag_seconds":list(paper.LAGS_SEC),
             "requires_unbiased_mixed_status_scan":True,
