@@ -56,6 +56,25 @@ class TruthTests(unittest.TestCase):
         self.assertFalse(sample["certified_sample"])
         self.assertEqual(sample["losses"], 1)
 
+    def test_twenty_verified_wins_plus_one_unknown_is_not_certified(self):
+        # A seemingly 100% sample can be cherry-picked by incomplete
+        # settlement coverage. Never publish it as certified last-20 accuracy.
+        trades=[]
+        for i in range(21):
+            row=fill(timestamp=1791950000-i)
+            row["condition_id"]="0x"+format(i+1,"064x")
+            trades.append(row)
+        answers=[("win",1792000000)]*20 + [
+            ("unknown_resolution_incomplete",None)]
+        with mock.patch.object(a,"fetch_wallet_trades",
+                               return_value=(trades,True)), \
+             mock.patch.object(a,"classify",side_effect=answers):
+            result=a.sample_wallet(W,{}, {})
+        self.assertEqual(result["resolved_sports_sample"],20)
+        self.assertFalse(result["certified_sample"])
+        self.assertEqual(result["unverified_final_or_mapping_count"],1)
+        self.assertEqual(result["directional_win_fraction_observed"],1.0)
+
     def test_fewer_than_twenty_observations_not_certified(self):
         with mock.patch.object(a, "fetch_wallet_trades", return_value=([fill()], True)), \
              mock.patch.object(a, "classify", return_value=("win",1792000000)):
