@@ -26,5 +26,6 @@ jobs:
           V33_MARKET_FOCUS: 'sports_btc'
           V33_MAX_ALERTS: '10'
         run: |
-          python -m py_compile tools/v33_signal_bot.py tests/test_v33_signal_bot.py
+          python -m py_compile tools/v33_signal_bot.py tools/v33_open_positions.py tests/test_v33_signal_bot.py tests/test_v33_open_positions.py
           python -m unittest discover -s tests -p 'test_v33_signal_bot.py' -v
+          python -m unittest discover -s tests -p 'test_v33_open_positions.py' -v
