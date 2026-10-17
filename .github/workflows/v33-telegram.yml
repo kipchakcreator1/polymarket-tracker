@@ -66,6 +66,11 @@ jobs:
           TELEGRAM_V33_BOT_TOKEN: ${{ secrets.TELEGRAM_V33_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           V33_MONITOR_MAX: '300'
+          # Dedicated OPEN-position research alerts, NOT fresh BUY.
+          # Scan 4 wallets per poll, cap 3 clearly labeled OPEN messages/hour.
+          V33_OPEN_ALERTS_ENABLED: '1'
+          V33_OPEN_SCAN_PER_POLL: '4'
+          V33_OPEN_MAX_ALERTS_PER_HOUR: '3'
           # Sports games first; BTC only from crypto.
           # No altcoins, politics, movies or distant markets.
           V33_MARKET_FOCUS: 'sports_btc'
@@ -187,6 +192,13 @@ jobs:
           print("- Book-depth and final payout evidence feed read-only fee-model reports.")
           print("- BOOK-VERIFIED SPORTS SHADOW quotes (NOT sent, NOT filled):"
                 len(data.get("shadow_evidence") or {}))
+          print("- OPEN-position (NOT BUY) Telegram accepts:",
+                counts.get("open_alerts_sent", 0))
+          print("- OPEN positions sent, deduped:",len(data.get("open_sent") or {}))
+          print("- OPEN book-price observations, NOT real fills:",
+                len(data.get("open_position_evidence") or {}))
+          print("- OPEN scans with incomplete risk API:",
+                counts.get("open_risk_api_incomplete", 0))
           print("- Shadow quotes do not bypass wallet risk vetoes.")
           print("- These are NOT filled orders or the user's realized returns.")
           print("- The historic BUY total predates per-topic classification.")
