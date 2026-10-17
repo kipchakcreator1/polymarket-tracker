@@ -20,7 +20,7 @@ concurrency:
 jobs:
   outcome-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - name: Checkout isolated v3.3 research branch
         uses: actions/checkout@v4
@@ -84,7 +84,7 @@ jobs:
       - name: Analyze actual sports picks using public resolutions
         env:
           PYTHONPATH: .
-          V33_TRUTH_WALLETS_PER_RUN: '3'
+          V33_TRUTH_WALLETS_PER_RUN: '8'
           V33_TRUTH_TRADE_PAGES: '16'
           V33_TRUTH_LOOKBACK_DAYS: '180'
           V33_TRUTH_FOCUS_WALLET: '0x31550df5402226b825f900a31659a05d809d268e'
