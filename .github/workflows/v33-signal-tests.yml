@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: '90-case sports BUY audit and forward-only hypothetical copy quote evidence'
+      - name: '95-case sports BUY plus paper-only shadow quotes; zero Telegram side effects'
         env:
           PYTHONPATH: .
           V33_PRIORITY_WALLETS: '0x5b6331e7ff0831a3fe2ed12004747db1a9c911a4'
