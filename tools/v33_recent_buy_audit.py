@@ -15,7 +15,11 @@ WALLETS=[
  "0x6b1dbe91847aa95386fc63669ff910e68469a01a",
  "0x31550df5402226b825f900a31659a05d809d268e",
 ]
-MAX_BUYS=50
+WALLETS=[w.strip().lower() for w in
+         os.getenv("V33_RECENT_AUDIT_WALLETS",
+                   ",".join(WALLETS)).split(",")
+         if audit.api.WALLET_RE.fullmatch(w.strip().lower())]
+MAX_BUYS=max(10,min(50,int(os.getenv("V33_RECENT_AUDIT_MAX_BUYS","50"))))
 
 
 def scan(wallet,trades,positions,trades_complete,positions_complete,
