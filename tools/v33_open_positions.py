@@ -16,7 +16,8 @@ from tools import v33_signal_bot as bot
 WALLETS_PER_POLL = max(1,min(8,int(os.getenv("V33_OPEN_SCAN_PER_POLL","4"))))
 ALERTS_PER_HOUR = max(1,min(5,int(os.getenv("V33_OPEN_MAX_ALERTS_PER_HOUR","3"))))
 MAX_POSITION_AGE = 48*3600
-MIN_POSITION_COST = 50.
+# Match the existing $35 verified BUY floor; do not promote small/dust holds.
+MIN_POSITION_COST = max(35.,float(os.getenv("V33_OPEN_MIN_POSITION_USD","35")))
 MIN_BEFORE_GAME = 10*60
 OPEN_REPEAT_WINDOW = 24*3600
 OPEN_JOURNAL_WINDOW = 45*86400
