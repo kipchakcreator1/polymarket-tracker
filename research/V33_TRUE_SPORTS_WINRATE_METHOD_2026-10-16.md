@@ -43,3 +43,42 @@ Hard rules:
 A future production ranking change requires: enough verified sport-specific history by wallet and league, calibration against the quoted implied probabilities and fees, an out-of-sample forward paper study of actual alert asks, adequate sample size and maximum drawdown review. 20-30 observations are a starting diagnostic, not a statistical proof or a guarantee of perfect picks.
 
 Old v3.1/v3.2 code and Telegram routes remain untouched. The research workflow does not send Telegram and does not place any order.
+
+## October 17: independent UFC case-study / root cause
+
+Focused wallet: `0x31550df5402226b825f900a31659a05d809d268e`.
+A complete 180-day maker-inclusive `/v2/trades?user=&taker_only=false&start=&end=`
+walk returned 345 fills over 91 markets. The previous study marked all 91 as
+unknown, despite visible resolved losing UFC holdings.
+
+Root cause: archived markets sometimes no longer appear in Gamma
+`/markets?condition_ids=...`. A **real independent live sample** (GitHub
+Actions run 39002719756, attempt 2) found:
+- UFC Alvin Hines: v2 `REDEEMABLE_LOST` unrealized PnL -$601.7637,
+  condition `0x3f3edc42fd8943...`, and `/v2/resolutions` reported
+  `status=resolved`, `payouts=[0,1000000]`,
+  `resolved_at=2026-07-18T22:00:28Z`.
+- UFC Gauge Young: v2 unrealized PnL -$600.9928,
+  condition `0x3cdba77ef9049d...`, final `[0,1000000]`,
+  `resolved_at=2026-08-23T01:15:48Z`.
+- Gamma lookup produced no matching market for either case.
+
+Repair: join `/v2/tokens?token_id=` to the exact `condition_id` and
+`token_id`, require official event-sports slug, `resolved=true`,
+`closed=true`, a valid outcome index (never sentinel 999), and consistency
+with final `/v2/resolutions` payouts and any `final_price`.
+Fail closed on any missing/mismatched evidence, use Gamma only when it returns
+a matching live/historical market. Do **not** infer a lost/winning pick solely
+from mark-to-market PnL or stale prices.
+
+Other repairs: 180d time-window complete cursor walk including maker and taker,
+refuse out-of-window response, count first BUY timestamp (not first SELL),
+mark cutoff at 140 researched conditions, audit archived REDEEMABLE/CLOSED
+inventory and count large unredeemed losing holdings separately from profitable
+CLOSED exits. See `tools/v33_result_audit.py`.
+
+**Deployment boundary:** This is READ-ONLY research. It neither sends Telegram
+signals nor certifies existing 71–90% general closed-position profitability as
+sports prediction accuracy. Live v3.3 remains on its existing provisional
+wallet ranking until sufficient verified per-sport outcomes and forward
+hypothetical copied-entry ROI support a controlled replacement.
