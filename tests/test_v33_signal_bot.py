@@ -684,6 +684,38 @@ class BotTests(unittest.TestCase):
         self.assertNotIn("include_archived", req.call_args_list[0].args[1])
         self.assertEqual(req.call_args_list[1].args[1]["include_archived"], "true")
 
+    def test_settled_losses_follow_all_archived_pages(self):
+        now = NOW
+        def lost(token):
+            return {"proxy_wallet": W, "condition_id": COND,
+                    "token_id": str(token), "last_event_at": now-86400,
+                    "status": "REDEEMABLE", "redeemable": True,
+                    "realized_pnl": 0, "unrealized_pnl": -600}
+        replies = [
+            {"data": [], "pagination": {"has_more": False}},
+            {"data": [lost(1)], "pagination":
+                {"has_more": True, "next_cursor": "page2"}},
+            {"data": [lost(2)], "pagination": {"has_more": False}}
+        ]
+        with mock.patch.object(bot.v2, "request_json", side_effect=replies) as req:
+            rows = bot.fetch_recent_results(W, now)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(req.call_count, 3)
+        self.assertEqual(req.call_args_list[-1].args[1]["cursor"], "page2")
+
+    def test_incomplete_settled_loss_inventory_fails_closed(self):
+        now = NOW
+        pages = [
+            {"data": [], "pagination": {"has_more": False}}
+        ] + [
+            {"data": [], "pagination":
+                {"has_more": True, "next_cursor": f"next_{i}"}}
+            for i in range(4)
+        ]
+        with mock.patch.object(bot.v2, "request_json", side_effect=pages):
+            with self.assertRaisesRegex(RuntimeError, "history incomplete"):
+                bot.fetch_recent_results(W, now)
+
     def test_recent_v2_rejects_incomplete_or_unverifiable_losers(self):
         row = {"proxy_wallet": W, "condition_id": COND, "token_id": TOKEN,
                "last_event_at": NOW, "status": "REDEEMABLE",
