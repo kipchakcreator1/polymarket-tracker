@@ -142,8 +142,9 @@ class TruthTests(unittest.TestCase):
 
     def test_unredeemed_losing_sports_position_is_not_ignored(self):
         loser={"proxy_wallet":W,"condition_id":C,"token_id":"yes",
-               "status":"REDEEMABLE","first_entry_at":1791900000,
-               "realized_pnl":0}
+               "status":"REDEEMABLE","redeemable":True,
+               "first_entry_at":1791900000,
+               "realized_pnl":0,"unrealized_pnl":-600}
         with mock.patch.object(a,"fetch_position_history",
                                return_value=([loser],True)), \
              mock.patch.object(a,"classify",
@@ -164,7 +165,8 @@ class TruthTests(unittest.TestCase):
 
     def test_partial_position_pages_cannot_certify_quality(self):
         closed={"proxy_wallet":W,"condition_id":C,"token_id":"yes",
-                "status":"CLOSED","first_entry_at":1791900000}
+                "status":"CLOSED","first_entry_at":1791900000,
+                "realized_pnl":25}
         with mock.patch.object(a,"fetch_position_history",
                                return_value=([closed],False)), \
              mock.patch.object(a,"classify",
