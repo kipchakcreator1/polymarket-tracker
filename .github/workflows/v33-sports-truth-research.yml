@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Prove maker/taker completeness, BUY-to-resolution matching and cashout separation
+      - name: Prove archived UFC payouts via V2 tokens and complete maker/taker history
         env:
           PYTHONPATH: .
         run: |
@@ -68,12 +68,14 @@ jobs:
                             len(d) if isinstance(d,list) else "invalid",
                             "states",[(x.get("status"),x.get("payouts"),
                             x.get("resolved_at")) for x in (d or [])[:2]])
-                      gg=request_json("/markets",{"condition_ids":c},
-                         base=bot.GAMMA_API,tries=2,timeout=18)
-                      m=next((x for x in gg if str(x.get("conditionId","")).lower()==c.lower()),{})
-                      print("GAMMA FINAL:",c[:16],"closed",m.get("closed"),
-                            "uma",m.get("umaResolutionStatus"),
-                            "prices",m.get("outcomePrices"))
+                      tt=request_json("/v2/tokens",{"token_id":str(row.get("token_id") or "")},
+                         tries=2,timeout=18)
+                      t=next((x for x in tt.get("data",[]) if
+                         str(x.get("token_id") or "")==str(row.get("token_id") or "") and
+                         str(x.get("condition_id") or "").lower()==c.lower()),{})
+                      print("V2 TOKEN FINAL:",c[:16],
+                         {k:t.get(k) for k in ("outcome_index","clob_index",
+                          "resolved","closed","final_price","event_slug","module")})
                   except Exception as exc:
                       print("UFC FINAL SAMPLE ERROR",type(exc).__name__,str(exc)[:100])
           except Exception as exc:
@@ -115,6 +117,10 @@ jobs:
                          case.get("resolved_sports_sample", 0)))
           print("- UFC case-study history complete:",
                 bool(case.get("position_truth", {}).get("certified_sample")))
+          print("- UFC position accounting:",
+                case.get("position_truth", {}).get("position_accounting", {}))
+          print("- UFC unknown outcomes by reason:",
+                case.get("position_truth", {}).get("status_counts", {}))
           print("- Wallet position-history samples:", sum(
                 bool(x.get("position_truth")) for x in report["wallets"].values()))
           print("- Verified closed-profitable but wrong-direction examples:", sum(
