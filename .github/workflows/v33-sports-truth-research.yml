@@ -84,7 +84,7 @@ jobs:
       - name: Analyze actual sports picks using public resolutions
         env:
           PYTHONPATH: .
-          V33_TRUTH_WALLETS_PER_RUN: '2'
+          V33_TRUTH_WALLETS_PER_RUN: '3'
           V33_TRUTH_TRADE_PAGES: '16'
           V33_TRUTH_LOOKBACK_DAYS: '180'
           V33_TRUTH_FOCUS_WALLET: '0x31550df5402226b825f900a31659a05d809d268e'
@@ -136,13 +136,31 @@ jobs:
           print("- Old alert entry asks were not recorded; paper PnL is forward-only.")
           print("- No real user fills or post-entry cashouts are assumed.")
           PY
+      - name: Test evidence ranking and publish research-only wallet shortlist
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_evidence_rank.py
+          python -m unittest discover -s tests -p 'test_v33_evidence_rank.py' -v
+          python -u tools/v33_evidence_rank.py
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          report=json.load(open("research/v33_evidence_rank.json"))
+          print("### Wallet sports evidence (research ONLY)")
+          print("- Wallets audited:",report["n_wallets_audited"])
+          print("- Complete historic event samples:",report["n_historical_audit_ready"])
+          print("- Forward paper return samples ready:",report["n_forward_paper_evaluable"])
+          print("- Wallets approved for live signals:",report["n_live_approved"])
+          print("- No closed-exit winrate ever used as sports forecast accuracy.")
+          print("- Snapshot: research/v33_evidence_rank.json")
+          PY
       - name: Persist ONLY independent research outcomes
         if: success()
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add research/v33_truth_report.json
+          git add research/v33_truth_report.json research/v33_evidence_rank.json
           if ! git diff --cached --quiet; then
             git commit -m 'research(v3.3): verified sports wallet outcomes [skip ci]'
             saved=false
