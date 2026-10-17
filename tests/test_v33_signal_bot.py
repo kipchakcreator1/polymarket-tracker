@@ -712,9 +712,45 @@ class BotTests(unittest.TestCase):
                 {"has_more": True, "next_cursor": f"next_{i}"}}
             for i in range(4)
         ]
-        with mock.patch.object(bot.v2, "request_json", side_effect=pages):
+        with mock.patch.object(bot, "RECENT_LOSS_PAGE_CAP", 4), \
+             mock.patch.object(bot.v2, "request_json", side_effect=pages):
             with self.assertRaisesRegex(RuntimeError, "history incomplete"):
                 bot.fetch_recent_results(W, now)
+
+    def test_many_unredeemed_major_losses_veto_early_and_cache(self):
+        # Four confirmed major losses on first page are decisive, even if
+        # the API has another 2,000 settled losers awaiting pagination.
+        rows=[{"proxy_wallet":W,"condition_id":COND,
+               "token_id":str(i),"last_event_at":NOW-100,
+               "status":"REDEEMABLE","redeemable":True,
+               "realized_pnl":0,"unrealized_pnl":-125}
+              for i in range(5)]
+        pages=[{"data":[],"pagination":{"has_more":False}},
+               {"data":rows,"pagination":{"has_more":True,
+                                          "next_cursor":"page2"}}]
+        state=bot.blank_state()
+        with mock.patch.object(bot.v2,"request_json",
+                               side_effect=pages) as req:
+            self.assertEqual(bot.recent_form_reason(state,W,NOW),
+                             "major_unredeemed_loss_cluster_90d")
+        self.assertEqual(req.call_count,2)
+        with mock.patch.object(bot,"fetch_recent_results",
+                               side_effect=AssertionError("must cache")):
+            self.assertEqual(bot.recent_form_reason(state,W,NOW+250),
+                             "major_unredeemed_loss_cluster_90d")
+        self.assertEqual(state["recent_form_cache"][W]["confirmed_risk_veto"],
+                         "major_unredeemed_loss_cluster_90d")
+
+    def test_valid_timestamp_milliseconds_and_delayed_poll_second_clock(self):
+        with mock.patch.object(bot.time,"time",return_value=NOW+140):
+            self.assertEqual(bot.position_activity_timestamp(
+                (NOW+100)*1000,NOW),NOW+100)
+            self.assertEqual(bot.position_activity_timestamp(
+                NOW+100,NOW),NOW+100)
+            with self.assertRaisesRegex(ValueError,"invalid"):
+                bot.position_activity_timestamp((NOW+900)*1000,NOW)
+        with self.assertRaises(ValueError):
+            bot.position_activity_timestamp(None,NOW)
 
     def test_recent_v2_rejects_incomplete_or_unverifiable_losers(self):
         row = {"proxy_wallet": W, "condition_id": COND, "token_id": TOKEN,
