@@ -1,0 +1,52 @@
+name: v3.3 Archived UFC Resolution Spotcheck (READ ONLY)
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-archived-ufc-spotcheck.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout isolated v3.3 code
+        uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove old UFC losses by exact token index plus final settlement
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import json
+          import smart_tracker_v2 as api
+          from tools import v33_result_audit as audit
+          wallet="0x31550df5402226b825f900a31659a05d809d268e"
+          p=api.request_json("/v2/positions",{"user":wallet,
+             "status":"REDEEMABLE_LOST","include_archived":"true","limit":6,
+             "sort_by":"UNREALIZED_PNL","sort_direction":"ASC"},tries=2)
+          rows=p["data"]
+          assert len(rows)>=2, "Cannot audit missing losing positions"
+          gc,rc={},{}
+          verified=0
+          for row in rows:
+              cond=str(row["condition_id"]).lower()
+              tok=str(row["token_id"])
+              verdict,settled=audit.classify(cond,tok,gc,rc)
+              print(json.dumps({"condition":cond[:18],"market":row.get("title"),
+                 "loss_usd":row.get("unrealized_pnl"),
+                 "outcome_index":row.get("outcome_index"),
+                 "final_verdict":verdict,"settled_at":settled}))
+              if verdict=="loss" and settled:
+                  verified+=1
+          print(f"Verified UFC losers by independent V2 payout: {verified}/{len(rows)}")
+          assert verified>=2, "Archived result mapping still unverified"
+          PY
