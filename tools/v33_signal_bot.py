@@ -95,6 +95,7 @@ MAX_FAST_TRADE_AGE = 75
 FAST_MARKET_END_BUFFER = 90
 RECENT_CACHE_SECONDS = 180
 RECENT_RISK_VETO_CACHE_SECONDS = 900
+RECENT_API_ERROR_COOLDOWN_SECONDS = 600  # no repeated costly failed pagination
 # Four pages are sufficient only for wallets with <=1,000 settled losses.
 # Once a disqualifying number of losses is independently observed, fail
 # closed immediately instead of fetching pages that cannot change the veto.
@@ -428,6 +429,10 @@ def recent_form_reason(state, wallet, now):
             0 <= now-int(value.get("checked_at") or 0) <=
             RECENT_RISK_VETO_CACHE_SECONDS):
         return value["confirmed_risk_veto"]
+    if (isinstance(value, dict) and value.get("history_unverified") and
+            0 <= now-int(value.get("checked_at") or 0) <=
+            RECENT_API_ERROR_COOLDOWN_SECONDS):
+        return "recent_history_unverified"
     if not (isinstance(value, dict) and
             "profit_factor" in value and "net_pnl" in value and
             "last5_net_pnl" in value and "last5_wins" in value and
@@ -439,6 +444,15 @@ def recent_form_reason(state, wallet, now):
         except ConfirmedLossVeto as exc:
             cache[wallet] = {"checked_at": now, "confirmed_risk_veto": exc.reason}
             return exc.reason
+        except (RuntimeError, ValueError, TimeoutError, OSError) as exc:
+            # Unknown means BLOCK, not "no recent losses". Avoid thousands of
+            # expensive identical 1000+ row failures in the following polls.
+            cache[wallet] = {"checked_at": now, "history_unverified": True,
+                             "error_class": type(exc).__name__}
+            mark(state, "recent_form_request_error")
+            print("V33 RECENT FORM CACHED WARNING:", wallet[:12],
+                  type(exc).__name__, str(exc)[:110])
+            return "recent_history_unverified"
         value = recent_form(rows, now)
         value["checked_at"] = now
         cache[wallet] = value
