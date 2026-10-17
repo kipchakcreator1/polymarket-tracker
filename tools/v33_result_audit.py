@@ -474,6 +474,10 @@ def sample_wallet(wallet, gamma_cache, resolution_cache, trade_cache=None):
             "events": last}
 
 
+def now_ts():
+    return int(time.time())
+
+
 def choose_wallets(shortlist, previous):
     eligible = [r["wallet"] for r in shortlist.get("shortlist", [])
                 if isinstance(r, dict) and
@@ -482,9 +486,18 @@ def choose_wallets(shortlist, previous):
     if not eligible:
         return [], 0
     offset = int(previous.get("next_wallet_index") or 0) % len(eligible)
-    selected = [eligible[(offset+i) % len(eligible)]
-                for i in range(min(WALLETS_PER_RUN, len(eligible)))]
-    return selected, (offset + len(selected)) % len(eligible)
+    focus = os.getenv("V33_TRUTH_FOCUS_WALLET", "").strip().lower()
+    old_focus = (previous.get("wallets") or {}).get(focus) or {}
+    focus_due = (api.WALLET_RE.fullmatch(focus) and
+                 now_ts() - int(old_focus.get("audited_at") or 0) >= 6*3600)
+    selected = [focus] if focus_due else []
+    from_rotation = 0
+    while len(selected) < min(WALLETS_PER_RUN, len(eligible)):
+        candidate = eligible[(offset + from_rotation) % len(eligible)]
+        from_rotation += 1
+        if candidate not in selected:
+            selected.append(candidate)
+    return selected, (offset + from_rotation) % len(eligible)
 
 
 def aggregate(rows):
@@ -530,6 +543,7 @@ def main():
         try:
             wallet_results[wallet] = sample_wallet(
                 wallet, gamma_cache, resolution_cache, trade_cache)
+            wallet_results[wallet]["audited_at"] = now
             try:
                 wallet_results[wallet]["position_truth"] = position_truth_sample(
                     wallet, gamma_cache, resolution_cache, trade_cache.get(wallet))
