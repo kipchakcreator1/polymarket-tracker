@@ -37,6 +37,48 @@ jobs:
         run: |
           python -m py_compile tools/v33_result_audit.py
           python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
+      - name: Inspect final-state API evidence for quarantined UFC wallet
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from smart_tracker_v2 import request_json
+          from tools import v33_signal_bot as bot
+          w="0x31550df5402226b825f900a31659a05d809d268e"
+          try:
+              p=request_json("/v2/positions", {"user":w,"status":"REDEEMABLE_LOST",
+                 "include_archived":"true","limit":3,"sort_by":"UNREALIZED_PNL",
+                 "sort_direction":"ASC"},tries=2,timeout=18)
+              rows=p.get("data",[]) if isinstance(p,dict) else []
+              print("UFC LOSS POSITION API: rows",len(rows),
+                    "has_more",p.get("pagination",{}).get("has_more"))
+              for row in rows[:2]:
+                  c=str(row.get("condition_id") or "")
+                  print("LOSS SAMPLE:", c[:16], "pnl", row.get("unrealized_pnl"),
+                        "redeemable",row.get("redeemable"),
+                        "closed_position_status",row.get("status"),
+                        "title",str(row.get("title") or "")[:90])
+                  if not c.startswith("0x"):
+                      continue
+                  try:
+                      rr=request_json("/v2/resolutions",{"condition":c},
+                         tries=2,timeout=18)
+                      d=rr.get("data") if isinstance(rr,dict) else None
+                      print("V2 FINAL API:",c[:16],"rows",
+                            len(d) if isinstance(d,list) else "invalid",
+                            "states",[(x.get("status"),x.get("payouts"),
+                            x.get("resolved_at")) for x in (d or [])[:2]])
+                      gg=request_json("/markets",{"condition_ids":c},
+                         base=bot.GAMMA_API,tries=2,timeout=18)
+                      m=next((x for x in gg if str(x.get("conditionId","")).lower()==c.lower()),{})
+                      print("GAMMA FINAL:",c[:16],"closed",m.get("closed"),
+                            "uma",m.get("umaResolutionStatus"),
+                            "prices",m.get("outcomePrices"))
+                  except Exception as exc:
+                      print("UFC FINAL SAMPLE ERROR",type(exc).__name__,str(exc)[:100])
+          except Exception as exc:
+              print("UFC LOSS DIAGNOSTIC ERROR",type(exc).__name__,str(exc)[:100])
+          PY
       - name: Analyze actual sports picks using public resolutions
         env:
           PYTHONPATH: .
