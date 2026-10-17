@@ -1,0 +1,90 @@
+name: v3.3 Multiwallet Sports Lag/Price Copy Audit (NO ORDERS)
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-wallet-copy-cohort.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v33-wallet-copy-cohort-only
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 19
+    steps:
+      - name: Checkout isolated research code and recent official outcomes
+        uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Tests — no fake ROI, hidden missing trades or winner-only selection
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m unittest discover -s tests -p 'test_v33_external_copytest.py' -v
+          python -m unittest discover -s tests -p 'test_v33_wallet_copy_cohort.py' -v
+      - name: Real historical CLOB price proxy comparison, many sports wallets
+        env:
+          PYTHONPATH: .
+          V33_COHORT_MAX_WALLETS: '12'
+          V33_COHORT_MIN_EVENTS: '8'
+          V33_COHORT_WORKERS: '4'
+          V33_EXTERNAL_COPYTEST_MAX_EVENTS: '15'
+        run: |
+          python -u tools/v33_wallet_copy_cohort.py
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          result=json.load(open('research/v33_wallet_copy_cohort.json'))
+          print("### Sports BUY multiwallet delayed-price research (NO ORDERS)")
+          print("- Audited population:",result['audited_wallet_population'])
+          print("- Wallets suitable for this *historical test*:",
+                result['wallets_with_minimum_purchasable_historical_events'])
+          print("- Wallets compared:",result['wallets_tested'])
+          print("- Results by sampled-price status:",result['status_counts'])
+          print("- Automatically approved for live BUY:",result['live_approved'])
+          print("- ROI is only sampled price proxy before fees, not an ASK/fill")
+          for row in result['wallets']:
+              print("- ",row['wallet'][:12],row['status'],
+                    "same-cohort events",row.get('common_cohort_all_four_lags',0),
+                    "5m delayed +5% adverse historical PRICE proxy ROI",
+                    row.get('roi_if_5pct_worse_entry_5m_no_fees'),
+                    "unverified market finals",
+                    row.get('unknown_final_or_mapping_markets'),
+                    "blocks",
+                    ','.join(row.get('historical_data_warnings',[])))
+          PY
+      - name: Save full machine-readable provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: v33-sports-multiwallet-copy-price-comparison
+          path: research/v33_wallet_copy_cohort.json
+          retention-days: 30
+      - name: Persist independent report in research branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/v33_wallet_copy_cohort.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'research(v3.3): compare sports multiwallet historical copy prices [skip ci]'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin v3.3-wallet-research
+            git rebase origin/v3.3-wallet-research
+            if git push origin HEAD:v3.3-wallet-research; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 1
