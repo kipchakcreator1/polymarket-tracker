@@ -71,6 +71,10 @@ jobs:
           V33_OPEN_ALERTS_ENABLED: '1'
           V33_OPEN_SCAN_PER_POLL: '4'
           V33_OPEN_MAX_ALERTS_PER_HOUR: '3'
+          V33_OPEN_MIN_POSITION_USD: '35'
+          # Risk/API failures are now cached for 10min (fail-closed);
+          # confirmed loss inventory vetoes return immediately, with no
+          # repetitive 1,000-position pagination for each candidate.
           # Sports games first; BTC only from crypto.
           # No altcoins, politics, movies or distant markets.
           V33_MARKET_FOCUS: 'sports_btc'
