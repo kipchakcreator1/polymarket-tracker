@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Prove confirmed payouts, cashout paradox and incomplete histories stay separate
+      - name: Prove maker/taker completeness, BUY-to-resolution matching and cashout separation
         env:
           PYTHONPATH: .
         run: |
@@ -40,7 +40,10 @@ jobs:
       - name: Analyze actual sports picks using public resolutions
         env:
           PYTHONPATH: .
-          V33_TRUTH_WALLETS_PER_RUN: '3'
+          V33_TRUTH_WALLETS_PER_RUN: '2'
+          V33_TRUTH_TRADE_PAGES: '16'
+          V33_TRUTH_LOOKBACK_DAYS: '180'
+          V33_TRUTH_FOCUS_WALLET: '0x31550df5402226b825f900a31659a05d809d268e'
         run: |
           python -u tools/v33_result_audit.py
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
@@ -58,6 +61,18 @@ jobs:
           print("- Forward paper HOLD PnL before fees ($):",
                 counts.get("paper_hold_pnl_no_fees", 0))
           print("- Wallet samples processed:", len(report["wallets"]))
+          print("- Complete 180d maker+taker trade windows:", sum(
+            bool(x.get("trade_window_complete")) for x in report["wallets"].values()))
+          print("- Complete assessed sports-market scans:", sum(
+            bool(x.get("market_scan_complete")) for x in report["wallets"].values()))
+          focus="0x31550df5402226b825f900a31659a05d809d268e"
+          case=report["wallets"].get(focus, {})
+          print("- UFC case-study wallet audited:", bool(case))
+          print("- UFC case-study verified resolved outcomes:",
+                case.get("position_truth", {}).get("resolved_sports_sample",
+                         case.get("resolved_sports_sample", 0)))
+          print("- UFC case-study history complete:",
+                bool(case.get("position_truth", {}).get("certified_sample")))
           print("- Wallet position-history samples:", sum(
                 bool(x.get("position_truth")) for x in report["wallets"].values()))
           print("- Verified closed-profitable but wrong-direction examples:", sum(
@@ -65,6 +80,9 @@ jobs:
                 for x in report["wallets"].values()))
           print("- Certified complete samples >=20:", sum(
             bool(x.get("certified_sample")) for x in report["wallets"].values()))
+          print("- Certified cross-validated position samples:", sum(
+            bool(x.get("position_truth", {}).get("certified_sample"))
+            for x in report["wallets"].values()))
           print("- Old alert entry asks were not recorded; paper PnL is forward-only.")
           print("- No real user fills or post-entry cashouts are assumed.")
           PY
