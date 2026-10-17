@@ -136,12 +136,76 @@ def resolution_data(condition, cache):
     return value
 
 
+# Archived sports markets are not reliably returned by Gamma /markets.
+# Data API v2 /tokens is the authoritative token-id / outcome-index bridge.
+SPORT_EVENT_PREFIXES = (
+    "ufc", "mma", "nba", "nfl", "nhl", "mlb", "wnba", "ncaaf", "ncaab",
+    "ncaa", "mls", "epl", "laliga", "serie-a", "bundesliga",
+    "ligue-1", "tennis", "soccer", "f1", "formula-1", "golf"
+)
+
+
+def v2_token_data(condition, token, cache):
+    """Match exact token AND condition to prevent false migrated-token joins."""
+    token = str(token)
+    key = (condition, token)
+    if key not in cache:
+        result = api.request_json("/v2/tokens", {"token_id": token},
+                                  tries=2, timeout=12)
+        if not isinstance(result, dict) or not isinstance(result.get("data"), list):
+            raise ValueError("Malformed v2 token response")
+        rows = [row for row in result["data"] if isinstance(row, dict)
+                and str(row.get("token_id") or "") == token
+                and str(row.get("condition_id") or "").lower() == condition]
+        cache[key] = rows[0] if len(rows) == 1 else None
+    return cache[key]
+
+
+def verified_sports_token(row):
+    """Conservative official event-slug sports classification, not title regex."""
+    if not isinstance(row, dict):
+        return False
+    slug = str(row.get("event_slug") or "").strip().lower()
+    return any(slug == prefix or slug.startswith(prefix + "-")
+               for prefix in SPORT_EVENT_PREFIXES)
+
+
+def v2_token_verdict(row, resolution):
+    """Join authenticated V2 token's outcome_index to final 1e6 payouts."""
+    if not isinstance(row, dict):
+        return "unknown_token_mapping"
+    if not verified_sports_token(row):
+        return "not_verified_sport"
+    if row.get("resolved") is not True or row.get("closed") is not True:
+        return "unknown_token_unsettled"
+    pays = resolved_payout(resolution)
+    idx = row.get("outcome_index")
+    if (pays is None or isinstance(idx, bool) or not isinstance(idx, int)
+            or idx == 999 or not 0 <= idx < len(pays)):
+        return "unknown_token_index"
+    payout = pays[idx]
+    if not (math.isclose(payout, 0, abs_tol=1)
+            or math.isclose(payout, 1_000_000, abs_tol=1)):
+        return "push_or_partial"
+    if any(not (math.isclose(v, 0, abs_tol=1)
+                or math.isclose(v, 1_000_000, abs_tol=1)) for v in pays):
+        return "push_or_partial"
+    final_price = row.get("final_price")
+    if final_price is not None:
+        try:
+            quoted = float(final_price)
+            if not math.isfinite(quoted) or not math.isclose(
+                    quoted, payout / 1_000_000, abs_tol=0.000001):
+                return "unknown_final_price_mismatch"
+        except (ValueError, TypeError):
+            return "unknown_final_price_mismatch"
+    return "win" if math.isclose(payout, 1_000_000, abs_tol=1) else "loss"
+
+
 def classify(condition, token, gamma_cache, resolution_cache):
-    """Classify only final verified outcomes; retain exact missing-evidence reason."""
+    """Resolution correctness must survive missing/archived Gamma markets."""
     market = market_data(condition, gamma_cache)
-    if market is None:
-        return "unknown_gamma_market", None
-    if not official_sports(market):
+    if market is not None and not official_sports(market):
         return "not_verified_sport", None
     resolution = resolution_data(condition, resolution_cache)
     if resolution is None:
@@ -150,10 +214,12 @@ def classify(condition, token, gamma_cache, resolution_cache):
         return "unknown_resolution_pending", None
     if resolved_payout(resolution) is None or resolved_at(resolution) is None:
         return "unknown_resolution_incomplete", None
-    if token_index(market, token) is None:
-        return "unknown_token_mapping", None
-    result = verdict(market, resolution, token)
-    return result, resolved_at(resolution)
+    if market is not None and token_index(market, token) is not None:
+        return verdict(market, resolution, token), resolved_at(resolution)
+    # Many historical UFC markets have verifiable V2 settlements but no
+    # Gamma market lookup. Never infer outcome_index from token id text.
+    row = v2_token_data(condition, token, gamma_cache)
+    return v2_token_verdict(row, resolution), resolved_at(resolution)
 
 
 def safe_condition(value):
