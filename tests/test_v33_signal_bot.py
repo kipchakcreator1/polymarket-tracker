@@ -1169,6 +1169,29 @@ class BotTests(unittest.TestCase):
 
 
 
+    def test_forward_evidence_survives_current_poll_clock_advance(self):
+        # This reproduced the data-loss bug: main() recorded now before
+        # long API checks, then quotes were written a few seconds later.
+        start=1792220000
+        signal={"wallet":W,"alert_at":start+7}
+        shadow={"wallet":W,"quoted_at":start+12}
+        self.assertEqual(bot.keep_forward_evidence(
+            {"new":signal},start,"alert_at"),{"new":signal})
+        self.assertEqual(bot.keep_forward_evidence(
+            {"new":shadow},start,"quoted_at"),{"new":shadow})
+        # No unbounded future timestamp or 45-day-old quote is trusted.
+        self.assertEqual(bot.keep_forward_evidence(
+            {"future":{"alert_at":start+901},
+             "stale":{"alert_at":start-46*86400}},
+            start,"alert_at"),{})
+
+    def test_shadow_cap_preserves_current_poll_quote_after_clock_skew(self):
+        start=1792220000
+        values={str(i):{"quoted_at":start+i} for i in range(12)}
+        kept=bot.keep_forward_evidence(
+            values,start,"quoted_at",limit=5)
+        self.assertEqual(list(kept.keys()),["11","10","9","8","7"])
+
     def test_book_verified_sports_shadow_is_not_a_buy_or_telegram(self):
         now = 1792137600
         state = bot.blank_state()
