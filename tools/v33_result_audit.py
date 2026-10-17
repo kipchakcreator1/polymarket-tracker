@@ -604,13 +604,22 @@ def sample_wallet(wallet, gamma_cache, resolution_cache, trade_cache=None):
     n = len(last)
     # When the trade feed did not finish, earlier buys/sells may be missing:
     # record observed directional sample, but NOT a certified true winrate.
-    certified = complete and fully_scanned and n >= 20 and not statuses.get("api_error")
+    # The most recent *settled* 20/30 cannot be called fully known when
+    # another observed position may have a missing/broken final resolution.
+    # Truly pending/unresolved events are excluded; incomplete final records
+    # and any token-mapping/category ambiguity invalidate certification.
+    uncertain_final = sum(count for reason, count in statuses.items()
+        if reason not in ("win", "loss", "push_or_partial",
+                          "unknown_resolution_pending", "not_verified_sport"))
+    certified = (complete and fully_scanned and n >= 20
+                 and uncertain_final == 0)
     return {"wallet": wallet, "trades_fetched": len(trades),
             "trade_history_complete": complete,
             "trade_window_days": TRADE_LOOKBACK_DAYS,
             "trade_window_complete": complete,
             "markets_in_window": len(all_picks),
             "market_scan_complete": fully_scanned,
+            "unverified_final_or_mapping_count": uncertain_final,
             "includes_maker_and_taker": True,
             "markets_considered": len(picks), "status_counts": dict(statuses),
             "resolved_sports_sample": n, "wins": wins, "losses": n-wins,
