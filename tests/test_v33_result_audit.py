@@ -173,6 +173,27 @@ class TruthTests(unittest.TestCase):
         self.assertFalse(value["certified_sample"])
         self.assertFalse(value["position_history_complete"])
 
+    def test_profitable_closed_rate_separate_from_unredeemed_loss_cluster(self):
+        rows=[{"condition_id":"0x"+str(i+1).zfill(64),
+               "token_id":str(i+1),"status":"CLOSED","realized_pnl":100}
+              for i in range(20)]
+        rows += [{"condition_id":"0x"+str(i+100).zfill(64),
+                  "token_id":str(i+100),"status":"REDEEMABLE",
+                  "redeemable":True,"realized_pnl":0,
+                  "unrealized_pnl":-600} for i in range(12)]
+        result=a.position_accounting_snapshot(rows,True)
+        self.assertEqual(result["profitable_closed_fraction"],1.0)
+        self.assertEqual(result["unredeemed_major_losers_100usd"],12)
+        self.assertEqual(result["unredeemed_loss_usd_observed"],-7200)
+        self.assertTrue(result["not_sports_winrate"])
+
+    def test_position_accounting_deduplicates_same_market_token(self):
+        x={"condition_id":C,"token_id":"yes","status":"REDEEMABLE",
+           "redeemable":True,"realized_pnl":0,"unrealized_pnl":-600}
+        counts=a.position_accounting_snapshot([x,x],False)
+        self.assertEqual(counts["unredeemed_losers"],1)
+        self.assertFalse(counts["positions_complete"])
+
     def test_forward_paper_hold_requires_recorded_ask(self):
         key=W+"|"+C+"|yes"
         prior=[{"wallet":W,"condition":C,"token_id":"yes",
