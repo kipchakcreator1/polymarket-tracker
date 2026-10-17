@@ -170,6 +170,14 @@ def verified_sports_token(row):
                for prefix in SPORT_EVENT_PREFIXES)
 
 
+def event_league(event_slug):
+    slug = str(event_slug or "").strip().lower()
+    for prefix in SPORT_EVENT_PREFIXES:
+        if slug == prefix or slug.startswith(prefix + "-"):
+            return prefix.upper()
+    return "UNVERIFIED"
+
+
 def v2_token_verdict(row, resolution):
     """Join authenticated V2 token's outcome_index to final 1e6 payouts."""
     if not isinstance(row, dict):
@@ -524,6 +532,7 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
                              and math.isfinite(realized) and realized > 0)
         resolved.append({
             "condition": condition, "token_id": token,
+            "league": event_league(pos.get("event_slug")),
             "resolved_at": settled, "first_entry_at": first,
             "direction": label, "closed": closed,
             "profitable_closed_wrong_direction":
@@ -533,6 +542,14 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
     sampled = resolved[:MAX_WALLET_OBSERVATIONS]
     wins = sum(x["direction"] == "win" for x in sampled)
     n = len(sampled)
+    league_stats = {}
+    for event in sampled:
+        key = event["league"]
+        group = league_stats.setdefault(key, {"wins": 0, "losses": 0})
+        group["wins" if event["direction"] == "win" else "losses"] += 1
+    for stats in league_stats.values():
+        count = stats["wins"] + stats["losses"]
+        stats["verified_direction_fraction"] = round(stats["wins"] / count, 4)
     return {
         "position_rows_scanned": len(rows),
         "position_accounting": accounting,
@@ -542,6 +559,7 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
         "matched_with_maker_inclusive_trades": confirmed_trade_window,
         "resolved_sports_sample": n,
         "wins": wins, "losses": n - wins,
+        "by_league": league_stats,
         "observed_directional_win_fraction": round(wins / n, 4) if n else None,
         "certified_sample": bool(
             complete and markets_scanned_completely and confirmed_trade_window
