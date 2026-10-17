@@ -18,6 +18,8 @@ def evidence(n=10, full=True):
             "market_scan_complete":full,
             "certified_sample":full,
             "position_truth":{"events":events,
+                "position_scan_selection":
+                    "recent_original_BUY_across_CLOSED_and_REDEEMABLE",
                 "certified_sample":full,
                 "position_history_complete":full,
                 "position_market_scan_complete":full,
@@ -55,6 +57,16 @@ class CopyCohort(unittest.TestCase):
         self.assertFalse(r["eligible_for_live_buy"])
         self.assertFalse(r["copy_roi_verified"])
         self.assertAlmostEqual(r["roi_if_5pct_worse_entry_5m_no_fees"],.65)
+
+    def test_old_closed_first_scan_invalidates_all_price_proxy_winners(self):
+        data=evidence()
+        data["position_truth"].pop("position_scan_selection")
+        with mock.patch.object(m,"MIN_EVENTS",2):
+            r=m.screen_one(result(),data)
+        self.assertEqual(r["status"],"INVALID_SOURCE_SCAN_ORDER")
+        self.assertIn("old_CLOSED_first_scan_can_hide_REDEEMABLE_losses",
+                      r["historical_data_warnings"])
+        self.assertFalse(r["eligible_for_live_buy"])
 
     def test_missing_prices_and_unresolved_markets_get_downside_scenario(self):
         data=evidence()
