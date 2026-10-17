@@ -267,6 +267,33 @@ class TruthTests(unittest.TestCase):
         with mock.patch.object(a.api,"request_json",return_value=value):
             self.assertIsNone(a.v2_token_data(C,"yes",{}))
 
+    def test_shadow_quote_outcome_is_hypothetical_not_sent_buy(self):
+        key=W+"|"+C+"|yes"
+        shadow={key:{"topic":"sports","hypothetical_copy_ask":.5,
+                     "hypothetical_copy_stake_usd":5,
+                     "decision":"blocked_recent"}}
+        with mock.patch.object(a,"classify",
+                               return_value=("loss",1792200000)):
+            rows=a.audit_signals({key:1791900000},{},{},
+                                 signal_evidence=shadow,max_checks=1)
+        self.assertEqual(len(rows),1)
+        self.assertAlmostEqual(rows[0]["paper_hold_pnl_no_fees"],-5.0)
+        self.assertEqual(rows[0]["result"],"loss")
+
+    def test_cached_pending_resolution_does_not_starve_other_checks(self):
+        key1=W+"|"+C+"|yes"
+        key2=W+"|"+("0x"+"2"*64)+"|no"
+        now=int(a.time.time())
+        old=[{"wallet":W,"condition":C,"token_id":"yes",
+              "result":"unknown_resolution_pending",
+              "checked_at":now,"alert_at":now,"settled_at":None}]
+        with mock.patch.object(a,"classify",
+                               return_value=("loss",now)) as remote:
+            rows=a.audit_signals({key1:now,key2:now-100},{},{},
+                                 old,max_checks=1)
+        self.assertEqual(remote.call_count,1)
+        self.assertEqual(sum(row["result"]=="loss" for row in rows),1)
+
     def test_forward_paper_hold_requires_recorded_ask(self):
         key=W+"|"+C+"|yes"
         prior=[{"wallet":W,"condition":C,"token_id":"yes",
