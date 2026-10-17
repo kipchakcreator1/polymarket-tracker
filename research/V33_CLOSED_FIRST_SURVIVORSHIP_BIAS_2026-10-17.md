@@ -102,3 +102,28 @@ of its existing general loss filters: the UFC case wallet above plus
 `0x3003...`, `0x6b1d...`, and `0xa772...`. This is a
 provisional risk block, not a finding that those wallets can never be
 profitable. Tests and reauditing are independently tracked in Actions.
+
+## Four additional shortlisted wallets
+
+The same recent-first-BUY test was run on four other shortlisted wallets:
+[GitHub Actions run 39016604038](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39016604038).
+Each 180-day maker-inclusive trade feed and both positions status feeds were
+reported complete.
+
+| Wallet | Recent original BUYs inspected | V2 verified sports WIN | V2 verified sports LOSS | Other 50 BUYs | Held negative positions within inspected buys |
+| --- | ---: | ---: | ---: | --- | ---: |
+| `0xee8a3de6ca0080af2abc5c9acbfc4dddadb269ac` | 50 | 4 | 2 | 36 not verified sports, 8 position absent | 10 |
+| `0x69f033ce27733d8717d7d168a3eb8a91610a1121` | 50 | 11 | 4 | 33 not verified sports, 1 position absent, 1 incomplete resolution | 8 |
+| `0x993700f76fb8e1fd8e0846afe3850d31f7cc4e38` | 50 | 23 | 12 | 4 position absent, 11 incomplete resolution | 21 |
+| `0x906aff5eb0c700a1fa2dee7c1b766c3384a4714e` | 50 | 4 | 5 | 21 not verified sports, 20 position absent | 13 |
+
+These are **not** certifiable all-time/last-50 sports winrates or proof of
+profitable copying. Sample is latest 50 original BUYs per wallet; some events
+may not have resolved or may lack a matching *held* position.
+The win/loss denominator varies by wallet. Any score based on only positive
+closed positions is misleading. This study doesn't know what a subscriber
+could pay for market-order fills.
+
+Even among wallets with apparently high recent sports win proportions,
+verified sample sizes (4/6 and 11/15) are too small and position loss
+inventory is nontrivial. No automatic live BUY promotion was made.
