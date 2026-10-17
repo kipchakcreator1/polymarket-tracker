@@ -124,7 +124,14 @@ def evaluate(root=ROOT, data_dir=DATA_DIR, focus=None):
                     continue
                 q=quote_buy(books.get(archive["market_id"],[]), when*1000,idx)
                 if q is None:
-                    lags[str(lag)]={"status":"no_fresh_book"}
+                    available=books.get(archive["market_id"],[])
+                    if available and when*1000 < available[0][0]:
+                        reason="copy_time_before_free_book_archive"
+                    elif available and when*1000 > available[-1][0]:
+                        reason="copy_time_after_free_book_archive"
+                    else:
+                        reason="no_fresh_book_at_copy_time"
+                    lags[str(lag)]={"status":reason}
                 else:
                     price=q["best_ask"]
                     lags[str(lag)]={"status":"best_ask_proxy",
@@ -135,6 +142,14 @@ def evaluate(root=ROOT, data_dir=DATA_DIR, focus=None):
                          "verified_result":official,"lags":lags})
         except Exception as e:
             rows.append({"condition":condition,"status":"error_"+type(e).__name__})
+    miss_counts=defaultdict(int)
+    for row in rows:
+        for value in (row.get("lags") or {}).values():
+            if value.get("status") != "best_ask_proxy":
+                miss_counts[value.get("status","unknown")]+=1
+    priced=sum(any(v.get("status")=="best_ask_proxy"
+                   for v in (row.get("lags") or {}).values())
+               for row in rows)
     # A sample market's quote sanity check is mechanical ONLY. Do not select
     # the side or a timestamp using its winning outcome.
     control=None
@@ -162,15 +177,18 @@ def evaluate(root=ROOT, data_dir=DATA_DIR, focus=None):
             "wallet_candidate_conditions":len(picks),
             "exact_condition_overlaps":len(overlapping),
             "tested_wallet_placements":len(rows),
+            "wallet_markets_with_any_fresh_book":priced,
+            "unusable_lag_reasons":dict(miss_counts),
             "control_quote":control,
             "wallet_lag_experiments":rows,
             "execution_accurate_profit":None,
-            "notes":"No exact condition overlap means the free UFC330 archive "
-                "CANNOT evaluate this wallet's past BUYs. Never substitute a "
-                "different UFC market or an illustrative quote. Point-in-time "
-                "best ASK does not prove $5 depth. Marketlens full historical "
-                "archive or directly recorded live-book quotes are needed for "
-                "these exact conditions."}
+            "notes":"The free UFC330 archive contains only its captured time "
+                "window. Exact condition joins are necessary but insufficient: "
+                "an earlier wallet BUY is never assigned a future first book. "
+                "Never substitute another market or synthetic demo as a fill. "
+                "Even point-in-time best ASK lacks sufficient depth evidence. "
+                "For real copied-entry profitability, obtain exact historical "
+                "L2 at the actual copy time and simulate executable depth."}
 
 
 def main():
