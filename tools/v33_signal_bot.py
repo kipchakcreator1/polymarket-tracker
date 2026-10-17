@@ -94,6 +94,11 @@ RECENT_MAX_LOSS_STREAK = 1
 MAX_FAST_TRADE_AGE = 75
 FAST_MARKET_END_BUFFER = 90
 RECENT_CACHE_SECONDS = 180
+RECENT_RISK_VETO_CACHE_SECONDS = 900
+# Four pages are sufficient only for wallets with <=1,000 settled losses.
+# Once a disqualifying number of losses is independently observed, fail
+# closed immediately instead of fetching pages that cannot change the veto.
+RECENT_LOSS_PAGE_CAP = 12
 # Active != closed: require a fresh, complete view of unrealized red positions.
 ACTIVE_CACHE_SECONDS = 60
 ACTIVE_PAGE_LIMIT = 100
@@ -232,6 +237,33 @@ def save_state(state):
     temp.replace(STATE)
 
 
+class ConfirmedLossVeto(RuntimeError):
+    """Strong risk failure confirmed in a partial, authenticated loss page."""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def position_activity_timestamp(value, now):
+    """Require explicit seconds or milliseconds from API; no invented dates."""
+    try:
+        raw = float(value)
+    except (ValueError, TypeError, OverflowError):
+        raise ValueError("Position activity timestamp missing or nonnumeric")
+    if not math.isfinite(raw):
+        raise ValueError("Position activity timestamp not finite")
+    if raw >= 1e12:
+        raw /= 1000.0  # Some API clients expose Unix milliseconds.
+    stamp = int(raw)
+    # now was sampled BEFORE network polling. Real API responses can be
+    # minutes later, so compare to actual response-clock as well.
+    latest = max(int(now), int(time.time())) + 120
+    if stamp <= 0 or stamp > latest:
+        raise ValueError("Position activity timestamp invalid")
+    return stamp
+
+
 def fetch_recent_results(wallet, now):
     """Read v2 CLOSED history AND settled-but-unredeemed losses.
 
@@ -245,7 +277,8 @@ def fetch_recent_results(wallet, now):
         # CLOSED is used only for the newest 20 recent PnL entries.
         # Settled zero-payout holdings require a fuller scan: a wallet with
         # hundreds of old unredeemed losses must not look safe by accident.
-        pages = 4 if status == "REDEEMABLE_LOST" else 1
+        pages = RECENT_LOSS_PAGE_CAP if status == "REDEEMABLE_LOST" else 1
+        material_24h, major_90d = set(), set()
         cursor = None
         used = set()
         for page_number in range(pages):
@@ -276,9 +309,8 @@ def fetch_recent_results(wallet, now):
                 token = str(item.get("token_id") or "")
                 if not v32.discovery.CONDITION_RE.fullmatch(condition) or not token:
                     raise ValueError("Position lacks condition or outcome identity")
-                timestamp = v2.asfloat(item.get("last_event_at"), float("nan"))
-                if not math.isfinite(timestamp) or timestamp <= 0 or timestamp > now + 60:
-                    raise ValueError("Position activity timestamp invalid")
+                timestamp = position_activity_timestamp(
+                    item.get("last_event_at"), now)
                 if status == "CLOSED":
                     if item.get("status") != "CLOSED":
                         raise ValueError("Expected closed position")
@@ -298,6 +330,22 @@ def fetch_recent_results(wallet, now):
                     "condition_id": condition, "token_id": token,
                     "_unredeemed_lost": status == "REDEEMABLE_LOST",
                 })
+                if status == "REDEEMABLE_LOST":
+                    key = (condition, token)
+                    if (pnl <= -RECENT_MIN_MATERIAL_LOSS_USD and
+                            0 <= now - timestamp <= RECENT_LOST_LOOKBACK_SECONDS):
+                        material_24h.add(key)
+                    if (pnl <= -MAJOR_LOSS_MIN_USD and
+                            0 <= now - timestamp <= MAJOR_LOSS_LOOKBACK_SECONDS):
+                        major_90d.add(key)
+            # Once >threshold unique confirmed losses are observed, no
+            # additional pages can make this wallet eligible. This is a veto,
+            # never a declaration of completed full history.
+            if status == "REDEEMABLE_LOST":
+                if len(major_90d) > MAJOR_LOSS_MAX_90D:
+                    raise ConfirmedLossVeto("major_unredeemed_loss_cluster_90d")
+                if len(material_24h) > RECENT_MAX_UNREDEEMED_LOSSES_24H:
+                    raise ConfirmedLossVeto("recent_unredeemed_loss_cluster")
             # The CLOSED top 100 are sufficient for recent 20, but a
             # truncated REDEEMABLE_LOST risk inventory is never a clean bill.
             if status == "CLOSED":
@@ -312,7 +360,8 @@ def fetch_recent_results(wallet, now):
             cursor = nxt
         else:
             if status == "REDEEMABLE_LOST":
-                raise RuntimeError("Settled-loss history incomplete after 4 pages")
+                raise RuntimeError(
+                    f"Settled-loss history incomplete after {RECENT_LOSS_PAGE_CAP} pages")
     # Never count one position twice. Preserve the worst available result
     # if an inconsistent API snapshot claims both CLOSED and REDEEMABLE.
     deduped = {}
@@ -375,13 +424,21 @@ def recent_form_reason(state, wallet, now):
     """Fail closed on poor or unknown recent performance; cache briefly."""
     cache = state.setdefault("recent_form_cache", {})
     value = cache.get(wallet)
+    if (isinstance(value, dict) and value.get("confirmed_risk_veto") and
+            0 <= now-int(value.get("checked_at") or 0) <=
+            RECENT_RISK_VETO_CACHE_SECONDS):
+        return value["confirmed_risk_veto"]
     if not (isinstance(value, dict) and
             "profit_factor" in value and "net_pnl" in value and
             "last5_net_pnl" in value and "last5_wins" in value and
             "unredeemed_lost_24h" in value and
             "major_unredeemed_lost_90d" in value and
             0 <= now - int(value.get("checked_at") or 0) <= RECENT_CACHE_SECONDS):
-        rows = fetch_recent_results(wallet, now)
+        try:
+            rows = fetch_recent_results(wallet, now)
+        except ConfirmedLossVeto as exc:
+            cache[wallet] = {"checked_at": now, "confirmed_risk_veto": exc.reason}
+            return exc.reason
         value = recent_form(rows, now)
         value["checked_at"] = now
         cache[wallet] = value
