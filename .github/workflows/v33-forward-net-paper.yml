@@ -1,0 +1,68 @@
+name: v3.3 Forward Sports BUY Net Paper Ledger (NO ORDERS)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-forward-net-paper.yml']
+  schedule:
+    - cron: '52 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: v33-sports-truth-research
+  cancel-in-progress: false
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test fee-adjusted paper PnL without fabricated fills
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m unittest discover -s tests -p 'test_v33_forward_net_paper.py' -v
+          python -m unittest discover -s tests -p 'test_v33_signal_bot.py' -q
+      - name: Evaluate recorded actual-time book shares against verified market payouts
+        env:
+          PYTHONPATH: .
+        run: |
+          python -u tools/v33_forward_net_paper.py
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d=json.load(open("research/v33_forward_net_paper.json"))
+          print("### Forward-only sports BUY paper ledger, NO REAL ORDERS")
+          print("- Captured quote statuses:",d["quote_coverage"])
+          for name,stream in d["by_stream"].items():
+              print("- "+name+": verified resolution after quote:",
+                    stream["qualifying_resolved_observations"])
+              print("  - Model PnL fee rate 0.05:",stream["fee_0.05_model_hold_pnl_usd"])
+              print("  - Model PnL +5% entry-price stress:",
+                    stream["fee_0.05_plus_5pct_worse_entry_pnl_usd"])
+              print("  - Actual settled copied trades:",stream["actual_filled_orders"])
+              print("  - Actual net ROI:",stream["actual_net_copy_roi"])
+          print("- NULL means insufficient prospective evidence, NOT zero profit.")
+          print("- Published 2026 share-fee model is a scenario; per-market fee might differ.")
+          PY
+      - name: Persist separate independently auditable paper ledger
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/v33_forward_net_paper.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'research(v3.3): fee-adjusted forward sports paper ledger [skip ci]'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin v3.3-wallet-research
+            git rebase origin/v3.3-wallet-research
+            if git push origin HEAD:v3.3-wallet-research; then exit 0; fi
+            sleep 3
+          done
+          exit 1
