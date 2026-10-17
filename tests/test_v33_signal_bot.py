@@ -631,7 +631,9 @@ class BotTests(unittest.TestCase):
             {"data": closed, "pagination": {"has_more": False}},
             {"data": lost, "pagination": {"has_more": False}}
         ]
-        with mock.patch.object(bot.v2, "request_json",
+        # This fixture tests merging, not early-stop of a clearly bad wallet.
+        with mock.patch.object(bot, "RECENT_MAX_UNREDEEMED_LOSSES_24H", 99), \
+             mock.patch.object(bot.v2, "request_json",
                                side_effect=replies) as req:
             rows = bot.fetch_recent_results(W, now)
         self.assertEqual(req.call_count, 2)
@@ -742,15 +744,16 @@ class BotTests(unittest.TestCase):
                          "major_unredeemed_loss_cluster_90d")
 
     def test_valid_timestamp_milliseconds_and_delayed_poll_second_clock(self):
-        with mock.patch.object(bot.time,"time",return_value=NOW+140):
+        at=1792223000  # actual epoch seconds, not the synthetic 1970-era NOW
+        with mock.patch.object(bot.time,"time",return_value=at+140):
             self.assertEqual(bot.position_activity_timestamp(
-                (NOW+100)*1000,NOW),NOW+100)
+                (at+100)*1000,at),at+100)
             self.assertEqual(bot.position_activity_timestamp(
-                NOW+100,NOW),NOW+100)
+                at+100,at),at+100)
             with self.assertRaisesRegex(ValueError,"invalid"):
-                bot.position_activity_timestamp((NOW+900)*1000,NOW)
+                bot.position_activity_timestamp((at+900)*1000,at)
         with self.assertRaises(ValueError):
-            bot.position_activity_timestamp(None,NOW)
+            bot.position_activity_timestamp(None,at)
 
     def test_recent_v2_rejects_incomplete_or_unverifiable_losers(self):
         row = {"proxy_wallet": W, "condition_id": COND, "token_id": TOKEN,
