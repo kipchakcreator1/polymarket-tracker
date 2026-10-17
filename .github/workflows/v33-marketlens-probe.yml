@@ -1,0 +1,44 @@
+name: v3.3 Marketlens Free UFC Archive Probe (READ ONLY)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-marketlens-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check free historical UFC order books and wallet condition overlap
+        run: |
+          python - <<'PY'
+          import urllib.request,csv,io,json,collections
+          root='https://raw.githubusercontent.com/marketlenstrade/polymarket-historical-data/main/ufc-330-2026-08-16/'
+          for fn in ('markets.csv','snapshots.csv'):
+              try:
+                  with urllib.request.urlopen(root+fn,timeout=25) as f:
+                      first=f.read(900)
+                  print('MARKETLENS',fn,'header/sample',repr(first[:700]))
+              except Exception as exc:
+                  print('MARKETLENS FETCH ERROR',fn,type(exc).__name__,str(exc)[:200])
+          with urllib.request.urlopen(root+'markets.csv',timeout=25) as f:
+              marketrows=list(csv.DictReader(io.TextIOWrapper(f,encoding='utf-8')))
+          conditions={x['condition_id'].lower() for x in marketrows}
+          truth=json.load(open('research/v33_truth_report.json'))
+          matching=[]
+          for wallet,v in truth.get('wallets',{}).items():
+              ev=(v.get('position_truth') or {}).get('events') or []
+              for x in ev:
+                  if str(x.get('condition') or '').lower() in conditions:
+                      matching.append((wallet[:12],x.get('condition'),x.get('event_slug')))
+          print('MARKETLENS UFC330',len(conditions),'free conditions; observed wallet sample overlaps',len(matching))
+          print('MARKETLENS MATCHES',matching[:15])
+          PY
