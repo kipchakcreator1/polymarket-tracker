@@ -276,8 +276,8 @@ def candidate_positions(rows):
                              and size > 0 and 0 < price < 1):
             continue
         rec = grouped[condition]
-        rec["first"] = min(rec["first"], stamp) if rec["first"] else stamp
         if side == "BUY":
+            rec["first"] = min(rec["first"], stamp) if rec["first"] else stamp
             rec["buys"][token] += price * size
         else:
             rec["sold"] = True
@@ -403,9 +403,13 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache):
     }
 
 
-def sample_wallet(wallet, gamma_cache, resolution_cache):
+def sample_wallet(wallet, gamma_cache, resolution_cache, trade_cache=None):
     trades, complete = fetch_wallet_trades(wallet)
-    picks = candidate_positions(trades)[:MAX_CONDITIONS_PER_WALLET]
+    if trade_cache is not None:
+        trade_cache[wallet] = {"rows": trades, "complete": complete}
+    all_picks = candidate_positions(trades)
+    fully_scanned = len(all_picks) <= MAX_CONDITIONS_PER_WALLET
+    picks = all_picks[:MAX_CONDITIONS_PER_WALLET]
     verified = []
     statuses = defaultdict(int)
     for condition, token, first, cashout in picks:
@@ -427,11 +431,13 @@ def sample_wallet(wallet, gamma_cache, resolution_cache):
     n = len(last)
     # When the trade feed did not finish, earlier buys/sells may be missing:
     # record observed directional sample, but NOT a certified true winrate.
-    certified = complete and n >= 20
+    certified = complete and fully_scanned and n >= 20 and not statuses.get("api_error")
     return {"wallet": wallet, "trades_fetched": len(trades),
             "trade_history_complete": complete,
             "trade_window_days": TRADE_LOOKBACK_DAYS,
             "trade_window_complete": complete,
+            "markets_in_window": len(all_picks),
+            "market_scan_complete": fully_scanned,
             "includes_maker_and_taker": True,
             "markets_considered": len(picks), "status_counts": dict(statuses),
             "resolved_sports_sample": n, "wins": wins, "losses": n-wins,
@@ -482,6 +488,7 @@ def main():
         except (ValueError, OSError):
             pass
     gamma_cache, resolution_cache = {}, {}
+    trade_cache = {}
     # Signal state keeps short dedupe history, while prospective quote evidence
     # lives longer. Include both without double counting the same BUY.
     all_sent = dict(state.get("sent", {}))
@@ -495,10 +502,11 @@ def main():
     wallet_results = dict(previous.get("wallets") or {})
     for wallet in wallets:
         try:
-            wallet_results[wallet] = sample_wallet(wallet, gamma_cache, resolution_cache)
+            wallet_results[wallet] = sample_wallet(
+                wallet, gamma_cache, resolution_cache, trade_cache)
             try:
                 wallet_results[wallet]["position_truth"] = position_truth_sample(
-                    wallet, gamma_cache, resolution_cache)
+                    wallet, gamma_cache, resolution_cache, trade_cache.get(wallet))
             except Exception as exc:
                 wallet_results[wallet]["position_truth_error"] = (
                     type(exc).__name__ + ": " + str(exc)[:90])
