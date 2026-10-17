@@ -1026,6 +1026,8 @@ def deliver(state, selected, now, *, clock=None):
             continue
         if topic:
             mark(state, "book_verified_" + topic)
+        # A quote timestamp, not a fill, taken after book depth was checked.
+        book_quoted_at = max(checked_at, int(clock())) if clock else checked_at
         # Research-only candidate baseline: price observed BEFORE risk veto.
         # It is NOT a Telegram recommendation and is NEVER a filled order.
         # Compare rejected-source picks with sent picks after resolution.
@@ -1038,6 +1040,11 @@ def deliver(state, selected, now, *, clock=None):
                     "source_trade_at": group["last"],
                     "hypothetical_copy_ask": quote["price"],
                     "hypothetical_copy_stake_usd": QUOTE_STAKE,
+                    "hypothetical_copy_shares": quote.get("shares"),
+                    "book_quoted_at": book_quoted_at,
+                    "best_ask": quote.get("best_ask"),
+                    "spread": quote.get("spread"),
+                    "visible_orderbook_depth_only": True,
                     "topic": "sports", "decision": "book_verified_only",
                     "note": "SHADOW baseline, not Telegram, not filled",
                 }
@@ -1115,6 +1122,11 @@ def deliver(state, selected, now, *, clock=None):
             "source_buy_usd": cand["usd"],
             "hypothetical_copy_ask": quote["price"],
             "hypothetical_copy_stake_usd": QUOTE_STAKE,
+            "hypothetical_copy_shares": quote.get("shares"),
+            "book_quoted_at": book_quoted_at,
+            "best_ask": quote.get("best_ask"),
+            "spread": quote.get("spread"),
+            "visible_orderbook_depth_only": True,
             "topic": "btc" if is_btc_market(group) else "sports",
             "note": "read-only book simulation; NOT a filled order",
         }
