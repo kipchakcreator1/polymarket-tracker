@@ -22,8 +22,10 @@ jobs:
           PYTHONPATH: .
         run: |
           python -m unittest discover -s tests -p 'test_v33_recent_buy_audit.py' -v
-      - name: Actual newest original BUYs, both CLOSED and REDEEMABLE, official V2 winners
+      - name: Recheck four other sports shortlist wallets without CLOSED-first win bias
         env:
           PYTHONPATH: .
+          V33_RECENT_AUDIT_WALLETS: '0xee8a3de6ca0080af2abc5c9acbfc4dddadb269ac,0x69f033ce27733d8717d7d168a3eb8a91610a1121,0x993700f76fb8e1fd8e0846afe3850d31f7cc4e38,0x906aff5eb0c700a1fa2dee7c1b766c3384a4714e'
+          V33_RECENT_AUDIT_MAX_BUYS: '50'
         run: |
           python -u tools/v33_recent_buy_audit.py
