@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 'Audit-gated sports BUY safety and prospective $5 copy quote evidence'
+      - name: 'Audit-gated 94-case UFC loss-cluster and archived-history risk safeguards'
         env:
           PYTHONPATH: .
           # Test under the same minimum source BUY as the live process.
@@ -52,6 +52,8 @@ jobs:
           V33_MONITOR_MAX: '300'
           V33_MAX_ALERTS: '10'
           V33_MARKET_FOCUS: 'sports_btc'
+          # Safety regression: wallet with many screenshot-confirmed settled UFC losses.
+          V33_QUARANTINE_WALLETS: '0x31550df5402226b825f900a31659a05d809d268e'
         run: |
           python -m py_compile tools/v33_signal_bot.py
           python -m unittest discover -s tests -p 'test_v33_signal_bot.py' -v
@@ -75,6 +77,8 @@ jobs:
           # Favor user-requested active Bitcoin 5-minute wallet, but keep
           # standard candidate and order-book safety checks.
           V33_PRIORITY_WALLETS: '0x5b6331e7ff0831a3fe2ed12004747db1a9c911a4'
+          # Temporary evidence-based quarantine; not a global strategy score.
+          V33_QUARANTINE_WALLETS: '0x31550df5402226b825f900a31659a05d809d268e'
           # $35+ wallet BUY, still requiring tradable $5 book and risk verification.
           V33_MIN_TRADE_USD: '35'
           V33_MIN_PRICE: '0.15'
@@ -85,6 +89,10 @@ jobs:
           # Require 6+ material unredeemed losers before this veto.
           V33_MIN_RECENT_LOSS_USD: '5'
           V33_MAX_UNREDEEMED_LOSSES_24H: '5'
+          # Additional safety stop: >=4 severe settled losses in last 90d
+          # of observed position activity, incl. archived unredeemed losses.
+          V33_MAJOR_UNREDEEMED_LOSS_USD: '100'
+          V33_MAX_MAJOR_LOSSES_90D: '3'
           # Never notify on political markets (Gamma event tags + title guard).
           V33_EXCLUDE_POLITICS: '1'
           V33_MAX_PRICE_RISE: '0.05'
@@ -169,6 +177,9 @@ jobs:
                     counts.get("portfolio_verified_" + topic, 0))
           print("- Active portfolio API incomplete/error rejections:",
                 counts.get("active_form_request_error", 0))
+          print("- Excluded major unredeemed-loss clusters (90d activity):",
+                counts.get("major_unredeemed_loss_cluster_90d", 0))
+          print("- Screenshot-supported suspected-loss wallet quarantined:", True)
           print("- Prospective hypothetical $5 entry quotes recorded:",
                 len(data.get("signal_evidence") or {}))
           print("- These are NOT filled orders or the user's realized returns.")
