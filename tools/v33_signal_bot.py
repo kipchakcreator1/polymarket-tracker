@@ -48,6 +48,11 @@ POLITICS_RE = re.compile(
 PRIORITY_WALLETS = frozenset(w.strip().lower() for w in
     os.getenv("V33_PRIORITY_WALLETS", "").split(",")
     if v2.WALLET_RE.fullmatch(w.strip().lower()))
+# Evidence-based temporary quarantine for wallets with suspicious settled losses.
+# This is NOT a global ban and does not alter historical state or on-chain funds.
+QUARANTINE_WALLETS = frozenset(w.strip().lower() for w in
+    os.getenv("V33_QUARANTINE_WALLETS", "").split(",")
+    if v2.WALLET_RE.fullmatch(w.strip().lower()))
 FAST_5M_RE = re.compile(r"\b(?:btc|eth|sol|xrp)-updown-5m-(\d+)\b", re.I)
 # No celebrity/movie/politics/year-out predictions in the live Telegram feed.
 MARKET_FOCUS = os.getenv("V33_MARKET_FOCUS", "sports_btc").strip().lower()
@@ -77,6 +82,12 @@ RECENT_MIN_MATERIAL_LOSS_USD = float(os.getenv("V33_MIN_RECENT_LOSS_USD", "5"))
 # 24h applies to last POSITION activity, not confirmed resolution time.
 # Do not interpret this as the count of markets actually lost today.
 RECENT_MAX_UNREDEEMED_LOSSES_24H = int(os.getenv("V33_MAX_UNREDEEMED_LOSSES_24H", "5"))
+# Guard against wallets accumulating large settled-but-unredeemed losses.
+# last_event_at is POSITION ACTIVITY time, not verified sports settlement.
+# This is a conservative red flag, not "true sports winrate".
+MAJOR_LOSS_LOOKBACK_SECONDS = 90 * 86400
+MAJOR_LOSS_MIN_USD = float(os.getenv("V33_MAJOR_UNREDEEMED_LOSS_USD", "100"))
+MAJOR_LOSS_MAX_90D = int(os.getenv("V33_MAX_MAJOR_LOSSES_90D", "3"))
 RECENT_MIN_POSITIVE_RATE = .60
 RECENT_MIN_PROFIT_FACTOR = 1.25
 RECENT_MAX_LOSS_STREAK = 1
@@ -122,7 +133,8 @@ def select_wallets(shortlist, now):
         if not isinstance(meta, dict):
             continue
         wallet = str(meta.get("wallet") or "").lower()
-        if not v2.WALLET_RE.fullmatch(wallet) or any(w == wallet for w, _ in qualified):
+        if (not v2.WALLET_RE.fullmatch(wallet) or wallet in QUARANTINE_WALLETS
+                or any(w == wallet for w, _ in qualified)):
             continue
         if (v2.asfloat(meta.get("closed")) < 30 or
                 v2.asfloat(meta.get("profitable_closed_rate")) < 0.70 or
@@ -197,11 +209,15 @@ def fetch_recent_results(wallet, now):
     """
     data = []
     for status in ("CLOSED", "REDEEMABLE_LOST"):
-        response = v2.request_json("/v2/positions", {
+        params = {
             "user": wallet, "status": status,
             "sort_by": "TIMESTAMP", "sort_direction": "DESC",
             "limit": RECENT_PAGE_SIZE,
-        }, tries=2, timeout=12)
+        }
+        if status == "REDEEMABLE_LOST":
+            # Archived zero-payout positions can remain visible in UI Active.
+            params["include_archived"] = "true"
+        response = v2.request_json("/v2/positions", params, tries=2, timeout=12)
         if not isinstance(response, dict) or not isinstance(response.get("data"), list):
             raise ValueError("Incomplete v2 recent positions response")
         if not isinstance(response.get("pagination"), dict):
@@ -290,6 +306,12 @@ def recent_form(rows, now=None):
         0 <= now - int(x.get("timestamp") or 0) <= RECENT_LOST_LOOKBACK_SECONDS
         for x in rows
     ) if now is not None else 0
+    major_unredeemed_90d = sum(
+        bool(x.get("_unredeemed_lost")) and
+        x.get("realizedPnl", 0.) <= -MAJOR_LOSS_MIN_USD and
+        0 <= now - int(x.get("timestamp") or 0) <= MAJOR_LOSS_LOOKBACK_SECONDS
+        for x in rows
+    ) if now is not None else 0
     last_five = pnls[:5]
     return {"closed": len(pnls),
             "positive_rate": sum(p > 0 for p in pnls) / len(pnls) if pnls else 0.,
@@ -297,7 +319,8 @@ def recent_form(rows, now=None):
             "last5_wins": sum(p > 0 for p in last_five),
             "last5_net_pnl": sum(last_five),
             "profit_factor": gains / losses if losses > 0 else None,
-            "unredeemed_lost_24h": recent_unredeemed_losses}
+            "unredeemed_lost_24h": recent_unredeemed_losses,
+             "major_unredeemed_lost_90d": major_unredeemed_90d}
 
 
 def recent_form_reason(state, wallet, now):
@@ -308,6 +331,7 @@ def recent_form_reason(state, wallet, now):
             "profit_factor" in value and "net_pnl" in value and
             "last5_net_pnl" in value and "last5_wins" in value and
             "unredeemed_lost_24h" in value and
+            "major_unredeemed_lost_90d" in value and
             0 <= now - int(value.get("checked_at") or 0) <= RECENT_CACHE_SECONDS):
         rows = fetch_recent_results(wallet, now)
         value = recent_form(rows, now)
@@ -315,6 +339,8 @@ def recent_form_reason(state, wallet, now):
         cache[wallet] = value
     if value["unredeemed_lost_24h"] > RECENT_MAX_UNREDEEMED_LOSSES_24H:
         return "recent_unredeemed_loss_cluster"
+    if value["major_unredeemed_lost_90d"] > MAJOR_LOSS_MAX_90D:
+        return "major_unredeemed_loss_cluster_90d"
     if value["closed"] < RECENT_CLOSED_WINDOW:
         return "recent_sample_too_small"
     if value["loss_streak"] > RECENT_MAX_LOSS_STREAK:
@@ -755,7 +781,7 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
                  if cand["usd"] < 50 else "")
     if active:
         active_note = (
-            f"\U0001f4ca Active: {active['active_count']} позиций, "
+            f"\U0001f4ca LIVE (без рассчитанных): {active['active_count']} позиций, "
             f"красных {active['red_count']}; "
             f"нереализованный PnL {active['unrealized_pnl']:+,.0f}$\n")
     if recent:
@@ -766,7 +792,11 @@ def message(group, meta, cand, quote, now, recent=None, active=None):
             f"последние 5: {recent['last5_wins']}/5 прибыльных, "
             f"PnL ${recent['last5_net_pnl']:+,.0f}; "
             f"непогашенных убыточных позиций с активностью за 24ч: "
-            f"{recent['unredeemed_lost_24h']}\n")
+            f"{recent['unredeemed_lost_24h']}; "
+            f"крупных непогашенных убытков с активностью за 90д: "
+            f"{recent.get('major_unredeemed_lost_90d', '?')}\n"
+            "⚠️ Это PnL записей позиций по времени действий, "
+            "НЕ процент угаданных спортивных матчей.\n")
     return ("\U0001f9ea <b>v3.3 • новый BUY-трейд</b>\n"
             + "\U0001f464 " + name + "\n"
             + "\U0001f3f7 " + html.escape(group["title"]) + "\n"
