@@ -182,7 +182,10 @@ jobs:
           print("- Screenshot-supported suspected-loss wallet quarantined:", True)
           print("- Prospective hypothetical $5 entry quotes recorded:",
                 len(data.get("signal_evidence") or {}))
-          print("- BOOK-VERIFIED SPORTS SHADOW quotes (NOT sent, NOT filled):",
+          print("- Forward quote timestamps may be a few seconds after poll start; now retained.")
+          print("- New quote records include $5 VWAP, orderbook shares and timing.")
+          print("- Book-depth and final payout evidence feed read-only fee-model reports.")
+          print("- BOOK-VERIFIED SPORTS SHADOW quotes (NOT sent, NOT filled):"
                 len(data.get("shadow_evidence") or {}))
           print("- Shadow quotes do not bypass wallet risk vetoes.")
           print("- These are NOT filled orders or the user's realized returns.")
