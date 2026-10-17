@@ -1,0 +1,56 @@
+name: v3.3 Independent Lag-Copytest — NO ORDERS
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-external-copytest.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify no look-ahead, non-execution, stale-history handling
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m unittest discover -s tests -p 'test_v33_external_copytest.py' -v
+      - name: Compare actual UFC wallet's last verified outcomes at 0 1 5 10 minute lags
+        env:
+          PYTHONPATH: .
+          V33_EXTERNAL_COPYTEST_MAX_EVENTS: '30'
+          V33_EXTERNAL_COPYTEST_WALLET: '0x31550df5402226b825f900a31659a05d809d268e'
+        run: |
+          python -u tools/v33_external_copytest.py
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d=json.load(open('research/v33_external_copytest.json'))
+          print("### External method: Polymarket Paper lag test + V2 official outcomes")
+          print("- Wallet:",d['wallet'])
+          print("- Verified historical outcomes examined:",d['events_examined'])
+          print("- Missing/unverified other final results:",d['unverified_final_or_mapping_count'])
+          print("- No-look-ahead common cohort across all delays:",d['common_cohort_usable_at_all_lags'])
+          print("- Note: CLOB price history is NOT executable book ASK.")
+          for lag,stats in d['lagged_reference_price_summary'].items():
+              print("- Lag",lag,"sec: price coverage",stats['events_with_fresh_historical_price'],
+                    "proxy ROI",stats['mean_hold_roi_at_price_proxy_no_fees'],
+                    "ROI if 5% worse price",stats['mean_hold_roi_at_5pct_worse_entry_no_fees'])
+          print("- Real-copy fills:",d['actual_copy_fills'])
+          print("- Execution-accurate ROI:",d['execution_accurate_roi'])
+          PY
+      - name: Keep raw snapshot for audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: v33-external-copytest-prices
+          path: research/v33_external_copytest.json
+          retention-days: 30
