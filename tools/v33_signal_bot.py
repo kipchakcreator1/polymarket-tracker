@@ -209,62 +209,77 @@ def fetch_recent_results(wallet, now):
     """
     data = []
     for status in ("CLOSED", "REDEEMABLE_LOST"):
-        params = {
-            "user": wallet, "status": status,
-            "sort_by": "TIMESTAMP", "sort_direction": "DESC",
-            "limit": RECENT_PAGE_SIZE,
-        }
-        if status == "REDEEMABLE_LOST":
-            # Archived zero-payout positions can remain visible in UI Active.
-            params["include_archived"] = "true"
-        response = v2.request_json("/v2/positions", params, tries=2, timeout=12)
-        if not isinstance(response, dict) or not isinstance(response.get("data"), list):
-            raise ValueError("Incomplete v2 recent positions response")
-        if not isinstance(response.get("pagination"), dict):
-            raise ValueError("Unknown v2 recent positions pagination")
-        page = response["data"]
-        if any(not isinstance(item, dict) for item in page):
-            raise ValueError("Malformed v2 recent position")
-        # Latest 100 per status are more than enough for last-20 sampling.
-        # A full first page in timestamp order is sufficient for top 20.
-        for item in page:
-            if str(item.get("proxy_wallet") or "").lower() != wallet:
-                raise ValueError("Position wallet identity mismatch")
-            condition = str(item.get("condition_id") or "").lower()
-            token = str(item.get("token_id") or "")
-            if not v32.discovery.CONDITION_RE.fullmatch(condition) or not token:
-                raise ValueError("Position lacks condition or outcome identity")
-            timestamp = v2.asfloat(item.get("last_event_at"), float("nan"))
-            if not math.isfinite(timestamp) or timestamp <= 0 or timestamp > now + 60:
-                raise ValueError("Position activity timestamp invalid")
+        # CLOSED is used only for the newest 20 recent PnL entries.
+        # Settled zero-payout holdings require a fuller scan: a wallet with
+        # hundreds of old unredeemed losses must not look safe by accident.
+        pages = 4 if status == "REDEEMABLE_LOST" else 1
+        cursor = None
+        used = set()
+        for page_number in range(pages):
+            params = {
+                "user": wallet, "status": status,
+                "sort_by": "TIMESTAMP", "sort_direction": "DESC",
+                "limit": 250 if status == "REDEEMABLE_LOST" else RECENT_PAGE_SIZE,
+            }
+            if status == "REDEEMABLE_LOST":
+                # The website's Active tab includes still-held settled losses.
+                params["include_archived"] = "true"
+            if cursor:
+                params["cursor"] = cursor
+            response = v2.request_json("/v2/positions", params,
+                                       tries=2, timeout=12)
+            if not isinstance(response, dict) or not isinstance(response.get("data"), list):
+                raise ValueError("Incomplete v2 recent positions response")
+            pagination = response.get("pagination")
+            if not isinstance(pagination, dict):
+                raise ValueError("Unknown v2 recent positions pagination")
+            page = response["data"]
+            if any(not isinstance(item, dict) for item in page):
+                raise ValueError("Malformed v2 recent position")
+            for item in page:
+                if str(item.get("proxy_wallet") or "").lower() != wallet:
+                    raise ValueError("Position wallet identity mismatch")
+                condition = str(item.get("condition_id") or "").lower()
+                token = str(item.get("token_id") or "")
+                if not v32.discovery.CONDITION_RE.fullmatch(condition) or not token:
+                    raise ValueError("Position lacks condition or outcome identity")
+                timestamp = v2.asfloat(item.get("last_event_at"), float("nan"))
+                if not math.isfinite(timestamp) or timestamp <= 0 or timestamp > now + 60:
+                    raise ValueError("Position activity timestamp invalid")
+                if status == "CLOSED":
+                    if item.get("status") != "CLOSED":
+                        raise ValueError("Expected closed position")
+                    pnl = v2.asfloat(item.get("realized_pnl"), float("nan"))
+                else:
+                    if item.get("status") != "REDEEMABLE" or item.get("redeemable") is not True:
+                        raise ValueError("Cannot verify settled losing position")
+                    realized = v2.asfloat(item.get("realized_pnl"), float("nan"))
+                    unrealized = v2.asfloat(item.get("unrealized_pnl"), float("nan"))
+                    pnl = realized + unrealized
+                    if pnl >= -0.01:
+                        continue  # the API can return unrelated redeemables
+                if not math.isfinite(pnl):
+                    raise ValueError("Missing/nonfinite recent position PnL")
+                data.append({
+                    "realizedPnl": pnl, "timestamp": int(timestamp),
+                    "condition_id": condition, "token_id": token,
+                    "_unredeemed_lost": status == "REDEEMABLE_LOST",
+                })
+            # The CLOSED top 100 are sufficient for recent 20, but a
+            # truncated REDEEMABLE_LOST risk inventory is never a clean bill.
             if status == "CLOSED":
-                if item.get("status") != "CLOSED":
-                    raise ValueError("Expected closed position")
-                pnl = v2.asfloat(item.get("realized_pnl"), float("nan"))
-            else:
-                # v2 emits REDEEMABLE row status for REDEEMABLE_LOST query.
-                if item.get("status") != "REDEEMABLE":
-                    raise ValueError("Expected settled-but-unredeemed loss")
-                if item.get("redeemable") is not True:
-                    raise ValueError("Cannot verify resolved losing position")
-                # Unrealized PnL on lost unredeemed holdings is the loss,
-                # not a successful closed trade; include realized exits too.
-                realized = v2.asfloat(item.get("realized_pnl"), float("nan"))
-                unrealized = v2.asfloat(item.get("unrealized_pnl"), float("nan"))
-                pnl = realized + unrealized
-                if pnl >= -0.01:
-                    # The public endpoint sometimes returns redeemable
-                    # winners or breakeven holdings for REDEEMABLE_LOST.
-                    # They are not losses; ignore the unrelated rows rather
-                    # than treating every otherwise valid wallet as broken.
-                    continue
-            if not math.isfinite(pnl):
-                raise ValueError("Missing/nonfinite recent position PnL")
-            data.append({
-                "realizedPnl": pnl, "timestamp": int(timestamp),
-                "condition_id": condition, "token_id": token,
-                "_unredeemed_lost": status == "REDEEMABLE_LOST",
-            })
+                break
+            if pagination.get("has_more") is False:
+                break
+            nxt = pagination.get("next_cursor")
+            if (pagination.get("has_more") is not True or
+                    not isinstance(nxt, str) or not nxt or nxt in used):
+                raise ValueError("Incomplete/invalid settled-loss pagination")
+            used.add(nxt)
+            cursor = nxt
+        else:
+            if status == "REDEEMABLE_LOST":
+                raise RuntimeError("Settled-loss history incomplete after 4 pages")
     # Never count one position twice. Preserve the worst available result
     # if an inconsistent API snapshot claims both CLOSED and REDEEMABLE.
     deduped = {}
