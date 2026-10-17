@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 'Audit-gated 94-case UFC loss-cluster and archived-history risk safeguards'
+      - name: 'Audit-gated sports book-shadow measurement, unchanged Telegram BUY risk filters'
         env:
           PYTHONPATH: .
           # Test under the same minimum source BUY as the live process.
@@ -182,6 +182,9 @@ jobs:
           print("- Screenshot-supported suspected-loss wallet quarantined:", True)
           print("- Prospective hypothetical $5 entry quotes recorded:",
                 len(data.get("signal_evidence") or {}))
+          print("- BOOK-VERIFIED SPORTS SHADOW quotes (NOT sent, NOT filled):",
+                len(data.get("shadow_evidence") or {}))
+          print("- Shadow quotes do not bypass wallet risk vetoes.")
           print("- These are NOT filled orders or the user's realized returns.")
           print("- The historic BUY total predates per-topic classification.")
           print("- Latest rejection counts:", last.get("this_poll", {}))
