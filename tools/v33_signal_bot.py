@@ -1302,7 +1302,19 @@ def main():
     conflicts = (notify_opposing_wallets(state, selected, now)
                  if CONFLICT_TELEGRAM_ENABLED else 0)
     sent = deliver(state, selected, now, clock=time.time)
-    if QUIET_STATUS_ENABLED and sent == 0:
+    open_sent = 0
+    if os.getenv("V33_OPEN_ALERTS_ENABLED", "0") == "1":
+        try:
+            # Dedicated distinct OPEN-position signal; not a NEW BUY.
+            # Small round-robin slice, verified risk and future game, no orders.
+            from tools import v33_open_positions
+            open_sent = v33_open_positions.scan(
+                state, selected, now, clock=time.time)
+        except Exception as exc:
+            mark(state, "open_scan_incomplete")
+            print("V33 OPEN SCAN WARNING:",type(exc).__name__,
+                  str(exc)[:110])
+    if QUIET_STATUS_ENABLED and sent == 0 and open_sent == 0:
         try:
             send_quiet_status(state, now, fills, len(selected))
         except Exception as exc:
@@ -1361,6 +1373,8 @@ def main():
                              0 <= now-int(meta.get("last_sports_buy") or 0) <= 172800
                              for meta in selected.values()),
                          "initial_wallets": baseline, "alerts": sent,
+                         "open_position_alerts": open_sent,
+                         "open_position_wallet_cursor": state.get("open_wallet_cursor", 0),
                          "conflict_alerts": conflicts,
                          "request_errors": failures, "poll_gaps": gaps,
                          "this_poll": suppression_delta,
