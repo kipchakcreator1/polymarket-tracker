@@ -21,6 +21,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Unit test sports-by-league, maker/taker, archived payouts
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
       - name: Prove old UFC losses by exact token index plus final settlement
         env:
           PYTHONPATH: .
