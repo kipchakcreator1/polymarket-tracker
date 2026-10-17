@@ -336,6 +336,60 @@ def fetch_position_history(wallet):
     return rows, complete
 
 
+def position_accounting_snapshot(rows, complete):
+    """Side-by-side profitability and still-held resolved losses.
+
+    No sports accuracy is inferred. Counts are unique (condition,token)
+    positions, not independent sporting matches; last_event_at is ACTIVITY.
+    """
+    if not isinstance(rows, list):
+        raise ValueError("Bad positions")
+    data = {}
+    for x in rows:
+        if not isinstance(x, dict):
+            raise ValueError("Malformed position")
+        condition = safe_condition(x.get("condition_id"))
+        token = str(x.get("token_id") or "")
+        status = str(x.get("status") or "")
+        if not condition or not token or status not in ("CLOSED", "REDEEMABLE"):
+            continue
+        realized = api.asfloat(x.get("realized_pnl"), float("nan"))
+        if not math.isfinite(realized):
+            raise ValueError("Missing realized PnL")
+        unrealized = 0.0
+        if status == "REDEEMABLE":
+            if x.get("redeemable") is not True:
+                raise ValueError("Redeemable position not confirmed")
+            unrealized = api.asfloat(x.get("unrealized_pnl"), float("nan"))
+            if not math.isfinite(unrealized):
+                raise ValueError("Missing unredeemed PnL")
+        net = realized + unrealized
+        key = (condition, token)
+        old = data.get(key)
+        if old is None or net < old["net"]:
+            data[key] = {"status": status, "net": net}
+    closed = [x for x in data.values() if x["status"] == "CLOSED"]
+    unredeemed = [x for x in data.values() if x["status"] == "REDEEMABLE"]
+    return {
+        "positions_complete": bool(complete),
+        "closed_count": len(closed),
+        "profitable_closed": sum(x["net"] > 0 for x in closed),
+        "losing_closed": sum(x["net"] < 0 for x in closed),
+        "profitable_closed_fraction": (round(sum(x["net"] > 0 for x in closed) /
+                                            len(closed), 4) if closed else None),
+        "redeemable_count": len(unredeemed),
+        "unredeemed_losers": sum(x["net"] < -.01 for x in unredeemed),
+        "unredeemed_major_losers_100usd": sum(
+            x["net"] <= -100 for x in unredeemed),
+        "unredeemed_loss_usd_observed": round(sum(
+            x["net"] for x in unredeemed if x["net"] < 0), 2),
+        "not_sports_winrate": True,
+        "scope_note": "Mixed categories; not latest matches. Incomplete when "
+                      "paginated history was truncated; cashouts can profit "
+                      "without forecasting the winning match."
+    }
+
+
 def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=None):
     """Verified event-outcome accuracy from position history, NOT realized ROI.
 
@@ -344,6 +398,7 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
     outcomes in one condition is an ambiguous directional predictor.
     """
     rows, complete = fetch_position_history(wallet)
+    accounting = position_accounting_snapshot(rows, complete)
     trade_snapshot = trade_snapshot or {}
     trade_rows = trade_snapshot.get("rows")
     confirmed_trade_window = bool(trade_snapshot.get("complete")) and isinstance(trade_rows, list)
@@ -407,6 +462,7 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
     n = len(sampled)
     return {
         "position_rows_scanned": len(rows),
+        "position_accounting": accounting,
         "position_history_complete": complete,
         "position_markets_total": len(markets),
         "position_market_scan_complete": markets_scanned_completely,
