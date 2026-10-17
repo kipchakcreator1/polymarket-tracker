@@ -137,14 +137,21 @@ def resolution_data(condition, cache):
 
 
 def classify(condition, token, gamma_cache, resolution_cache):
+    """Classify only final verified outcomes; retain exact missing-evidence reason."""
     market = market_data(condition, gamma_cache)
-    if not market:
-        return "unknown", None
+    if market is None:
+        return "unknown_gamma_market", None
     if not official_sports(market):
         return "not_verified_sport", None
     resolution = resolution_data(condition, resolution_cache)
     if resolution is None:
-        return "unknown", None
+        return "unknown_resolution_missing", None
+    if str(resolution.get("status") or "").lower() != "resolved":
+        return "unknown_resolution_pending", None
+    if resolved_payout(resolution) is None or resolved_at(resolution) is None:
+        return "unknown_resolution_incomplete", None
+    if token_index(market, token) is None:
+        return "unknown_token_mapping", None
     result = verdict(market, resolution, token)
     return result, resolved_at(resolution)
 
@@ -473,7 +480,7 @@ def position_truth_sample(wallet, gamma_cache, resolution_cache, trade_snapshot=
         "certified_sample": bool(
             complete and markets_scanned_completely and confirmed_trade_window
             and n >= 20 and not status_counts.get("api_error")
-            and not status_counts.get("unknown")),
+            and not any(k.startswith("unknown") for k in status_counts)),
         "profitable_closed_wrong_direction": sum(
             x["profitable_closed_wrong_direction"] for x in sampled),
         "status_counts": dict(status_counts),
@@ -559,11 +566,15 @@ def choose_wallets(shortlist, previous):
 def aggregate(rows):
     return {"win": sum(x["result"] == "win" for x in rows),
             "loss": sum(x["result"] == "loss" for x in rows),
-            "unresolved_or_uncertain": sum(x["result"] == "unknown" for x in rows),
+            "unresolved_or_uncertain": sum(str(x["result"]).startswith("unknown")
+                                          for x in rows),
             "not_verified_sport": sum(x["result"] == "not_verified_sport" for x in rows),
             "push_or_partial": sum(x["result"] == "push_or_partial" for x in rows),
             "api_error": sum(x["result"] == "api_error" for x in rows),
             "not_checked": sum(x["result"] == "not_checked" for x in rows),
+            "unknown_breakdown": {k: sum(x["result"] == k for x in rows)
+                for k in sorted({x["result"] for x in rows
+                                 if str(x["result"]).startswith("unknown")})},
             "paper_hold_sample": sum(isinstance(x.get("paper_hold_pnl_no_fees"),
                                                (int, float)) for x in rows),
             "paper_hold_pnl_no_fees": round(sum(
