@@ -22,9 +22,12 @@ STATE_PATH = ROOT / "v33_signal_state.json"
 SHORTLIST_PATH = ROOT / "v33_wallet_shortlist.json"
 OUTPUT_PATH = ROOT / "v33_truth_report.json"
 WALLETS_PER_RUN = max(1, min(5, int(os.getenv("V33_TRUTH_WALLETS_PER_RUN", "3"))))
-TRADE_PAGES = 4
+# Audit a bounded recent *time window*, not an arbitrary newest-1000 fills.
+# Unlike the old extractor, include maker-side trades explicitly.
+TRADE_PAGES = max(4, min(32, int(os.getenv("V33_TRUTH_TRADE_PAGES", "16"))))
 TRADE_PAGE_SIZE = 250
-MAX_CONDITIONS_PER_WALLET = 90
+TRADE_LOOKBACK_DAYS = max(30, min(365, int(os.getenv("V33_TRUTH_LOOKBACK_DAYS", "180"))))
+MAX_CONDITIONS_PER_WALLET = 140
 MAX_SIGNAL_CONDITIONS = 90  # bounded refresh per run; retain previous observations
 MAX_WALLET_OBSERVATIONS = 30
 
@@ -204,15 +207,23 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
     return results
 
 
-def fetch_wallet_trades(wallet):
-    """Bounded cursor walk, with explicit completeness flag for truncation."""
+def fetch_wallet_trades(wallet, now=None):
+    """Fetch a complete time-bounded window including maker AND taker fills.
+
+    Completeness means all pages in [now - LOOKBACK, now] were obtained. It
+    does NOT mean the wallet's entire lifetime history. On cap or missing cursor,
+    an incomplete flag is returned instead of inventing the omitted trades.
+    """
     if not api.WALLET_RE.fullmatch(wallet):
         raise ValueError("Bad wallet address")
+    now = int(now if now is not None else time.time())
+    start = now - TRADE_LOOKBACK_DAYS * 86400
     cursor = None
     seen_cursors = set()
     rows = []
     for _ in range(TRADE_PAGES):
-        params = {"user": wallet, "limit": TRADE_PAGE_SIZE}
+        params = {"user": wallet, "start": start, "end": now,
+                  "limit": TRADE_PAGE_SIZE, "taker_only": "false"}
         if cursor:
             params["cursor"] = cursor
         value = api.request_json("/v2/trades", params, tries=2, timeout=14)
@@ -222,6 +233,12 @@ def fetch_wallet_trades(wallet):
         for row in value["data"]:
             if not isinstance(row, dict) or str(row.get("proxy_wallet", "")).lower() != wallet:
                 raise ValueError("Malformed trades / wallet mismatch")
+            try:
+                stamp = int(row.get("timestamp"))
+            except (ValueError, TypeError, OverflowError):
+                raise ValueError("Trade timestamp missing")
+            if not start <= stamp <= now + 60:
+                raise ValueError("Trades API ignored requested time window")
             rows.append(row)
         page = value["pagination"]
         if page.get("has_more") is False:
@@ -413,10 +430,14 @@ def sample_wallet(wallet, gamma_cache, resolution_cache):
     certified = complete and n >= 20
     return {"wallet": wallet, "trades_fetched": len(trades),
             "trade_history_complete": complete,
+            "trade_window_days": TRADE_LOOKBACK_DAYS,
+            "trade_window_complete": complete,
+            "includes_maker_and_taker": True,
             "markets_considered": len(picks), "status_counts": dict(statuses),
             "resolved_sports_sample": n, "wins": wins, "losses": n-wins,
             "directional_win_fraction_observed": round(wins / n, 4) if n else None,
             "certified_sample": certified,
+            "history_scope": "only time-bounded recent trades; not lifetime completeness",
             "cashout_marked": sum(x["sold_before_or_after"] for x in last),
             "events": last}
 
