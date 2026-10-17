@@ -48,6 +48,18 @@ class BotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bot.select_wallets(data, NOW+4*86400)
 
+    def test_quarantined_wallet_never_enters_live_shortlist(self):
+        risk = "0x31550df5402226b825f900a31659a05d809d268e"
+        quality = {"closed": 100, "profitable_closed_rate": .90,
+                   "realized_closed_pnl": 10000, "profit_factor": 5}
+        data = {"schema": "v33_wallet_shortlist_1", "observed_at": NOW,
+                "shortlist": [dict(quality, wallet=risk),
+                              dict(quality, wallet=W)]}
+        with mock.patch.object(bot, "QUARANTINE_WALLETS", frozenset({risk})):
+            chosen = bot.select_wallets(data, NOW)
+        self.assertNotIn(risk, chosen)
+        self.assertIn(W, chosen)
+
     def test_ninetynine_cent_buy_excluded(self):
         state = bot.blank_state()
         self.assertTrue(bot.add_fill(state, trade(price=.99), NOW))
@@ -642,6 +654,35 @@ class BotTests(unittest.TestCase):
             result = bot.recent_form_reason(state, W, now)
         self.assertEqual(result, "recent_unredeemed_loss_cluster")
         self.assertEqual(state["recent_form_cache"][W]["positive_rate"], 1.)
+
+    def test_major_losses_older_than_24h_still_block_ufc_wallet(self):
+        now = NOW
+        # Wallet can score 20/20 on profitable CLOSED positions while
+        # retaining many zero-payout sports tokens with -$600 each.
+        rows = [{"realizedPnl": 15, "timestamp": now-i}
+                for i in range(20)]
+        rows += [{"realizedPnl": -600, "_unredeemed_lost": True,
+                  "timestamp": now - 7*86400 - i}
+                 for i in range(5)]
+        state = bot.blank_state()
+        with mock.patch.object(bot, "fetch_recent_results", return_value=rows):
+            reason = bot.recent_form_reason(state, W, now)
+        self.assertEqual(reason, "major_unredeemed_loss_cluster_90d")
+        self.assertEqual(state["recent_form_cache"][W]["unredeemed_lost_24h"], 0)
+        self.assertEqual(state["recent_form_cache"][W]["major_unredeemed_lost_90d"], 5)
+        self.assertEqual(state["recent_form_cache"][W]["positive_rate"], 1)
+
+    def test_lost_positions_fetch_explicitly_includes_archived(self):
+        now = NOW
+        replies = [
+            {"data": [], "pagination": {"has_more": False}},
+            {"data": [], "pagination": {"has_more": False}}
+        ]
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=replies) as req:
+            bot.fetch_recent_results(W, now)
+        self.assertNotIn("include_archived", req.call_args_list[0].args[1])
+        self.assertEqual(req.call_args_list[1].args[1]["include_archived"], "true")
 
     def test_recent_v2_rejects_incomplete_or_unverifiable_losers(self):
         row = {"proxy_wallet": W, "condition_id": COND, "token_id": TOKEN,
