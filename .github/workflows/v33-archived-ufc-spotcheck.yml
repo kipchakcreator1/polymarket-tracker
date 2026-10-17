@@ -26,6 +26,20 @@ jobs:
           PYTHONPATH: .
         run: |
           python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
+      - name: Verify research ranking has no false confident wallet
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m unittest discover -s tests -p 'test_v33_evidence_rank.py' -v
+          python -u tools/v33_evidence_rank.py
+          python - <<'PY'
+          import json
+          r=json.load(open('research/v33_evidence_rank.json'))
+          assert r['n_live_approved']==0, 'Research cannot silently promote live picks'
+          print('EVIDENCE STATUS:',r['n_wallets_audited'],
+                'wallets;',r['n_historical_audit_ready'],'certified historical;',
+                r['n_forward_paper_evaluable'],'forward paper ROI samples')
+          PY
       - name: Prove old UFC losses by exact token index plus final settlement
         env:
           PYTHONPATH: .
