@@ -21,7 +21,7 @@ ROOT = Path("research")
 STATE_PATH = ROOT / "v33_signal_state.json"
 SHORTLIST_PATH = ROOT / "v33_wallet_shortlist.json"
 OUTPUT_PATH = ROOT / "v33_truth_report.json"
-WALLETS_PER_RUN = max(1, min(5, int(os.getenv("V33_TRUTH_WALLETS_PER_RUN", "3"))))
+WALLETS_PER_RUN = max(1, min(10, int(os.getenv("V33_TRUTH_WALLETS_PER_RUN", "8"))))
 # Audit a bounded recent *time window*, not an arbitrary newest-1000 fills.
 # Unlike the old extractor, include maker-side trades explicitly.
 TRADE_PAGES = max(4, min(32, int(os.getenv("V33_TRUTH_TRADE_PAGES", "16"))))
