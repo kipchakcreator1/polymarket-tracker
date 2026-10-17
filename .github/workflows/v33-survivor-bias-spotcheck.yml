@@ -1,0 +1,66 @@
+name: v3.3 Historical CLOSED/REDEEMABLE Bias Spotcheck (READ ONLY)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-survivor-bias-spotcheck.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compare old order and unbiased 220-condition mix on two wallets
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import json,collections
+          from tools import v33_result_audit as audit
+          wallets=[
+            "0x300317934bfe0cc8740affc7425b0cd3772530f5",
+            "0x6b1dbe91847aa95386fc63669ff910e68469a01a",
+          ]
+          for wallet in wallets:
+            trades,tc=audit.fetch_wallet_trades(wallet)
+            positions,pc=audit.fetch_position_history(wallet)
+            buys={cond:(token,first) for cond,token,first,sold in audit.candidate_positions(trades)}
+            markets=collections.defaultdict(list)
+            for pos in positions:
+              condition=audit.safe_condition(pos.get("condition_id"))
+              if condition:
+                markets[condition].append(pos)
+            def flags(chosen):
+              c=collections.Counter()
+              for condition,entries in chosen:
+                statuses={r.get("status") for r in entries}
+                for status in statuses:
+                  c[status]+=1
+                if any(str(r.get("status"))=="REDEEMABLE"
+                   and float(r.get("realized_pnl",0))+float(r.get("unrealized_pnl",0))<-.01
+                   for r in entries):
+                  c["UNREDEEMED_LOSING"]+=1
+              return dict(c)
+            old=list(markets.items())[:220]
+            indexed=[]
+            for condition,entries in markets.items():
+              when=buys.get(condition,(None,0))[1]
+              if not when:
+                when=max(int(x.get("last_event_at") or 0) for x in entries)
+              indexed.append((condition,entries,when))
+            indexed.sort(key=lambda x:(-x[2],x[0]))
+            modern=[(cond,entries) for cond,entries,_ in indexed[:220]]
+            print("WALLET CLOSED-FIRST BIAS",json.dumps({
+              "wallet":wallet,"trade_feed_complete":tc,
+              "position_feed_complete":pc,
+              "available_markets":len(markets),
+              "original_closed_first_220":flags(old),
+              "BUY_chronological_mixed_220":flags(modern)},sort_keys=True))
+          PY
