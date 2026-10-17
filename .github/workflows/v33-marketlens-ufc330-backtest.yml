@@ -41,9 +41,11 @@ jobs:
           print('- Complete trade window:',d['wallet_trade_window_complete'])
           print('- Wallet candidate conditions:',d['wallet_candidate_conditions'])
           print('- EXACT wallet / archived-market condition matches:',d['exact_condition_overlaps'])
+          print('- Matches with actual-time book coverage:',d['wallet_markets_with_any_fresh_book'])
+          print('- Missing history reasons for all lag scenarios:',d['unusable_lag_reasons'])
           print('- Execution-accurate ROI:',d['execution_accurate_profit'])
-          if d['exact_condition_overlaps']==0:
-              print('- The public sample DOES NOT cover this wallet: no substituted markets.')
+          if d['wallet_markets_with_any_fresh_book']==0:
+              print('- The free sample has NO tradable-time book for this wallet: no substituted prices.')
           print('- Attribution: Marketlens https://marketlens.trade (CC BY 4.0).')
           PY
       - name: Archive machine-readable audit, never push to Telegram
