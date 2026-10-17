@@ -664,8 +664,12 @@ def choose_wallets(shortlist, previous):
     offset = int(previous.get("next_wallet_index") or 0) % len(eligible)
     focus = os.getenv("V33_TRUTH_FOCUS_WALLET", "").strip().lower()
     old_focus = (previous.get("wallets") or {}).get(focus) or {}
+    old_events = ((old_focus.get("position_truth") or {}).get("events") or [])
+    event_schema_stale = (bool(old_events) and
+                          any("event_slug" not in e for e in old_events))
     focus_due = (api.WALLET_RE.fullmatch(focus) and
                  (os.getenv("V33_TRUTH_FORCE_FOCUS", "0") == "1" or
+                  event_schema_stale or
                   now_ts() - int(old_focus.get("audited_at") or 0) >= 6*3600))
     selected = [focus] if focus_due else []
     from_rotation = 0
