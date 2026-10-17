@@ -214,7 +214,22 @@ class BotTests(unittest.TestCase):
         self.assertEqual(count, 0)
         sender.assert_not_called()
         self.assertEqual(state["counters"]["recent_form_request_error"], 1)
-        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(state["counters"]["recent_history_unverified"], 1)
+        self.assertEqual(len(state["pending"]), 0)  # never alert on unknown risk
+
+    def test_repeated_incomplete_history_is_cached_and_cannot_send(self):
+        state=bot.blank_state()
+        with mock.patch.object(bot,"fetch_recent_results",
+                               side_effect=RuntimeError("history incomplete")) as req:
+            self.assertEqual(bot.recent_form_reason(state,W,NOW),
+                             "recent_history_unverified")
+            self.assertEqual(bot.recent_form_reason(state,W,NOW+45),
+                             "recent_history_unverified")
+            self.assertEqual(bot.recent_form_reason(state,W,NOW+599),
+                             "recent_history_unverified")
+        self.assertEqual(req.call_count,1)
+        self.assertEqual(state["counters"]["recent_form_request_error"],1)
+        self.assertEqual(state["recent_form_cache"][W]["history_unverified"],True)
 
     def test_recent_seven_losses_stop_alert_even_with_high_old_winrate(self):
         state = bot.blank_state()
