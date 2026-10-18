@@ -1540,6 +1540,68 @@ class BotTests(unittest.TestCase):
             self.assertEqual(saved["last_run"]["cached_politics_market_meta"],1)
 
 
+    def test_shadow_distinguishes_real_loss_veto_from_unknown_api_history(self):
+        # Both are fail-closed, but never call an unverified API response
+        # an observed economic loss in the research report.
+        for reason in ("major_unredeemed_loss_cluster_90d",
+                       "recent_history_unverified"):
+            state=bot.blank_state()
+            self.assertTrue(bot.add_fill(state,trade(price=.5),NOW))
+            with mock.patch.object(bot,"MARKET_FOCUS","sports_btc"), \
+                 mock.patch.object(bot,"market_focus_reason",return_value=None), \
+                 mock.patch.object(bot,"conflicting_wallet_signal",return_value=False), \
+                 mock.patch.object(bot,"political_market_reason",return_value=None), \
+                 mock.patch.object(bot,"check_trade",return_value=(
+                     {"price":.51,"best_ask":.51,"shares":bot.QUOTE_STAKE/.51},None)), \
+                 mock.patch.object(bot,"recent_form_reason",return_value=reason), \
+                 mock.patch.object(bot.v2,"send_telegram") as sender:
+                self.assertEqual(bot.deliver(state,{W:{"name":"Test","winrate":.8}},NOW),0)
+            sender.assert_not_called()
+            record=state["shadow_evidence"][W+"|"+COND+"|"+TOKEN]
+            self.assertEqual(record["risk_gate"],"recent")
+            self.assertEqual(record["risk_reason"],reason)
+            self.assertEqual(record["risk_checked_at"],NOW)
+            self.assertIn(record["decision"],("blocked_recent","awaiting_recent_history"))
+            self.assertEqual(state["counters"]["alerts_sent"] if
+                             "alerts_sent" in state["counters"] else 0,0)
+
+    def test_shadow_records_portfolio_rejection_without_relabeling_as_recent(self):
+        state=bot.blank_state()
+        bot.add_fill(state,trade(price=.5),NOW)
+        with mock.patch.object(bot,"MARKET_FOCUS","sports_btc"), \
+             mock.patch.object(bot,"market_focus_reason",return_value=None), \
+             mock.patch.object(bot,"conflicting_wallet_signal",return_value=False), \
+             mock.patch.object(bot,"political_market_reason",return_value=None), \
+             mock.patch.object(bot,"check_trade",return_value=(
+                 {"price":.51,"best_ask":.51,"shares":bot.QUOTE_STAKE/.51},None)), \
+             mock.patch.object(bot,"recent_form_reason",return_value=None), \
+             mock.patch.object(bot,"active_form_reason",return_value="active_portfolio_drawdown"), \
+             mock.patch.object(bot.v2,"send_telegram") as sender:
+            self.assertEqual(bot.deliver(state,{W:{"name":"Test","winrate":.8}},NOW),0)
+        sender.assert_not_called()
+        record=state["shadow_evidence"][W+"|"+COND+"|"+TOKEN]
+        self.assertEqual(record["decision"],"blocked_active")
+        self.assertEqual(record["risk_gate"],"active_portfolio")
+        self.assertEqual(record["risk_reason"],"active_portfolio_drawdown")
+
+    def test_sent_shadow_has_no_stale_failed_gate_reason(self):
+        state=bot.blank_state()
+        bot.add_fill(state,trade(price=.5),NOW)
+        with mock.patch.object(bot,"MARKET_FOCUS","sports_btc"), \
+             mock.patch.object(bot,"market_focus_reason",return_value=None), \
+             mock.patch.object(bot,"conflicting_wallet_signal",return_value=False), \
+             mock.patch.object(bot,"political_market_reason",return_value=None), \
+             mock.patch.object(bot,"check_trade",return_value=(
+                 {"price":.51,"best_ask":.51,"shares":bot.QUOTE_STAKE/.51},None)), \
+             mock.patch.object(bot,"recent_form_reason",return_value=None), \
+             mock.patch.object(bot,"active_form_reason",return_value=None), \
+             mock.patch.object(bot.v2,"send_telegram",return_value=718):
+            self.assertEqual(bot.deliver(state,{W:{"name":"Test","winrate":.8}},NOW),1)
+        r=state["shadow_evidence"][W+"|"+COND+"|"+TOKEN]
+        self.assertEqual(r["decision"],"sent_telegram")
+        self.assertEqual(r["risk_gate"],"passed")
+        self.assertIsNone(r["risk_reason"])
+
 
 if __name__ == "__main__":
     unittest.main()
