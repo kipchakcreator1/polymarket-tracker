@@ -200,6 +200,85 @@ def quote_price_time_support(unique_rows, *, max_price_gap=.05,
     }
 
 
+def observable_quote_outcome_maturity(checkpoint, forward):
+    """Censoring inventory for SAVED ORIGINAL quotes only (not full trade flow).
+
+    Daily (UTC) and 10-cent ask buckets expose whether apparent performance
+    merely reflects which sports markets have already settled. No imputation
+    for missing old quotes or verified-final timestamps.
+    """
+    collected=collections.defaultdict(list)
+    missing=collections.Counter()
+    for row in checkpoint.get("rows") or []:
+        if not isinstance(row,dict) or row.get("shadow_decision")!="blocked_recent":
+            continue
+        q=row.get("original_book_quote")
+        if not isinstance(q,dict):
+            missing["blocked_missing_original_quote"]+=1
+            continue
+        price=finite_number(q.get("hypothetical_copy_ask"),0)
+        stamp=finite_number(q.get("book_quoted_at"),0)
+        condition=row.get("condition")
+        if price is None or not price<1 or stamp is None or not isinstance(condition,str):
+            missing["blocked_invalid_quote_or_market"]+=1
+            continue
+        collected["blocked_recent"].append((condition,price,int(stamp),row.get("result")))
+    for row in forward.get("positions") or []:
+        if not isinstance(row,dict) or row.get("stream")!="telegram_sent":
+            continue
+        price=finite_number(row.get("ask_vwap"),0)
+        stamp=finite_number(row.get("book_quoted_at"),0)
+        condition=row.get("condition")
+        if price is None or not price<1 or stamp is None or not isinstance(condition,str):
+            missing["sent_invalid_quote_or_market"]+=1
+            continue
+        status=("win" if row.get("status")=="verified_settled_paper" and
+                row.get("final_outcome")=="win" else
+                "loss" if row.get("status")=="verified_settled_paper" and
+                row.get("final_outcome")=="loss" else
+                "not_final")
+        collected["telegram_sent"].append((condition,price,int(stamp),status))
+    out={}
+    for cohort,raw in ((cohort,collected[cohort])
+                       for cohort in ("blocked_recent","telegram_sent")):
+        unique={}
+        dupe=set()
+        for condition,price,stamp,result in raw:
+            key=condition.lower()
+            if key in unique:
+                dupe.add(key)
+            else:
+                unique[key]=(price,stamp,result)
+        for x in dupe:
+            unique.pop(x,None)
+        buckets=collections.defaultdict(lambda:{"observed_quoted_conditions":0,
+                                                 "final_win":0,"final_loss":0,
+                                                 "not_final_or_unverified":0})
+        for price,stamp,result in unique.values():
+            day=__import__("datetime").datetime.datetime.fromtimestamp(
+                stamp,__import__("datetime").timezone.utc).strftime("%Y-%m-%d")
+            price_bin=min(9,int(price*10))
+            key=f"{day}|ask_{price_bin*10:02d}-{(price_bin+1)*10:02d}c"
+            s=buckets[key]
+            s["observed_quoted_conditions"]+=1
+            category="final_win" if result=="win" else "final_loss" if result=="loss" else "not_final_or_unverified"
+            s[category]+=1
+        out[cohort]={
+            "unique_quote_conditions":len(unique),
+            "duplicate_condition_rows_excluded":len(raw)-len(unique),
+            "final_outcomes_in_quote_journal":sum(
+                b["final_win"]+b["final_loss"] for b in buckets.values()),
+            "not_final_or_unverified_in_quote_journal":sum(
+                b["not_final_or_unverified"] for b in buckets.values()),
+            "utc_day_ask_decile_buckets":dict(sorted(buckets.items())),
+            "representative_of_all_discovered_trades":False,
+            "missing_earlier_quotes_and_settlement_lag_not_corrected":True,
+        }
+    return {"cohorts":out,"missing_original_quote_proof":dict(missing),
+            "purpose":"selection_and_settlement_censoring_diagnostic_only",
+            "complete_outcome_population_verified":False}
+
+
 def build_report(checkpoint, forward):
     if not isinstance(checkpoint, dict) or checkpoint.get("schema") != (
             "v33_durable_shadow_checkpoint_1"):
@@ -235,6 +314,7 @@ def build_report(checkpoint, forward):
     sample_enough=all(
         v["descriptive_sample_30plus_market_conditions"] for v in by.values())
     overlap=quote_price_time_support(unique)
+    maturity=observable_quote_outcome_maturity(checkpoint, forward)
     return {
         "schema":"v33_archived_quote_two_cohort_paper_1",
         "checkpoint_completed_runs":(checkpoint.get("meta") or {}).get("completed_runs"),
@@ -245,6 +325,7 @@ def build_report(checkpoint, forward):
         "exclusion_reasons":dict(rejected),
         "by_cohort":by,
         "quote_price_time_support":overlap,
+        "original_quote_outcome_maturity_by_time_odds":maturity,
         "both_descriptive_samples_reach_30":sample_enough,
         "data_is_not_matched_by_event_or_time":True,
         "market_condition_is_not_independent_sport_event":True,
