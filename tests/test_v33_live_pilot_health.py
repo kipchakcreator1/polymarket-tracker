@@ -96,7 +96,21 @@ class LivePilotHealthTests(unittest.TestCase):
         state["last_run"]["watching"]=3
         r=h.build(source,state,NOW,selector)
         self.assertFalse(r["last_saved_exactly_matches_reconstructed_350"])
+        self.assertEqual(r["live_runtime_wallets_not_in_current_reconstructed_shortlist"],0)
+        self.assertEqual(r["reconstructed_wallets_not_yet_in_live_runtime"],1)
         self.assertEqual(r["new_research_group_present_in_saved_runtime"],1)
+
+    def test_stale_monitor_membership_is_reported_not_merged_with_new_cohort(self):
+        source,state=fixture()
+        state["cursors"].pop(D)
+        state["cursors"]["0x"+"e"*40]=NOW
+        report=h.build(source,state,NOW,selector)
+        self.assertEqual(report["actual_last_saved_cursor_count"],4)
+        self.assertEqual(report["live_runtime_wallets_not_in_current_reconstructed_shortlist"],1)
+        self.assertEqual(report["reconstructed_wallets_not_yet_in_live_runtime"],1)
+        self.assertEqual(report["by_reconstructed_cohort"]["unknown_or_unselected"]
+                         ["members_in_last_persisted_runtime"],1)
+        self.assertTrue(report["cohort_attribution_not_exact_historical_membership"])
 
     def test_stale_or_future_quote_excluded_without_fake_fills(self):
         source,state=fixture()
