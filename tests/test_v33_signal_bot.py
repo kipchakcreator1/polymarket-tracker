@@ -251,12 +251,12 @@ class BotTests(unittest.TestCase):
         state = bot.blank_state()
         bot.add_fill(state, trade(price=.5), NOW)
         meta = {W: {"name": "Test", "winrate": .8}}
-        with mock.patch.object(bot, "political_market_reason", return_value=None), \\
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
              mock.patch.object(bot, "check_trade", return_value=(
-                 {"price": .51, "best_ask": .51}, None)), \\
+                 {"price": .51, "best_ask": .51}, None)), \
              mock.patch.object(bot, "recent_form_reason",
-                               side_effect=["recent_history_unverified", None]) as risk, \\
-             mock.patch.object(bot, "active_form_reason", return_value=None), \\
+                               side_effect=["recent_history_unverified", None]) as risk, \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
              mock.patch.object(bot.v2, "send_telegram", return_value=321) as sender:
             self.assertEqual(bot.deliver(state, meta, NOW), 0)
             self.assertEqual(len(state["pending"]), 1)
@@ -270,11 +270,11 @@ class BotTests(unittest.TestCase):
     def test_unverified_history_never_promoted_after_expiry(self):
         state = bot.blank_state()
         bot.add_fill(state, trade(price=.5), NOW)
-        with mock.patch.object(bot, "political_market_reason", return_value=None), \\
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
              mock.patch.object(bot, "check_trade", return_value=(
-                 {"price": .51, "best_ask": .51}, None)), \\
+                 {"price": .51, "best_ask": .51}, None)), \
              mock.patch.object(bot, "recent_form_reason",
-                               return_value="recent_history_unverified"), \\
+                               return_value="recent_history_unverified"), \
              mock.patch.object(bot.v2, "send_telegram") as sender:
             self.assertEqual(bot.deliver(state, {W: {"name": "", "winrate": .8}},
                                          NOW+bot.MAX_AGE), 0)
@@ -286,11 +286,11 @@ class BotTests(unittest.TestCase):
         state = bot.blank_state()
         bot.add_fill(state, trade(price=.5), NOW)
         meta = {W: {"name": "Test", "winrate": .8}}
-        with mock.patch.object(bot, "political_market_reason", return_value=None), \\
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \
              mock.patch.object(bot, "check_trade", return_value=(
-                 {"price": .51, "best_ask": .51}, None)), \\
-             mock.patch.object(bot, "recent_form_reason", return_value=None), \\
-             mock.patch.object(bot, "active_form_reason", return_value=None), \\
+                 {"price": .51, "best_ask": .51}, None)), \
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \
+             mock.patch.object(bot, "active_form_reason", return_value=None), \
              mock.patch.object(bot.v2, "send_telegram",
                                side_effect=[None, 567]) as sender:
             self.assertEqual(bot.deliver(state, meta, NOW), 0)
