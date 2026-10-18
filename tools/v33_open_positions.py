@@ -211,8 +211,14 @@ def scan(state, selected, now, *, clock=None):
             accepted+=1
             break  # cap one OPEN alert per checked wallet
     state["open_alert_times"]=recent[-ALERTS_PER_HOUR:]
+    # Telegram's acknowledged OPEN timestamp is sampled AFTER network
+    # verification. Pruning against the scan's initial clock used to drop
+    # every just-sent dedupe key with a positive processing delay.
+    # Accept only the bounded, already-supported forward timestamp skew;
+    # future polls still enforce the normal 24h repeat cooldown.
     state["open_sent"]={k:v for k,v in sent.items()
-                        if 0<=checked_at-int(v)<=30*86400}
+                        if -bot.EVIDENCE_FUTURE_SKEW_SECONDS <=
+                        checked_at-int(v)<=30*86400}
     state["open_position_evidence"]=bot.keep_forward_evidence(
         evidence,checked_at,"quoted_at",limit=900)
     return accepted
