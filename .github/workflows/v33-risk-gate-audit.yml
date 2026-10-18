@@ -43,6 +43,16 @@ jobs:
           path: v33-snapshot
           persist-credentials: false
           fetch-depth: 1
+      - name: Read-only live 350-vs-300 selected-wallet quote and Telegram funnel
+        env:
+          PYTHONPATH: .
+          V33_PILOT_INPUT_DIR: v33-snapshot
+          V33_PRIORITY_WALLETS: '0x5b6331e7ff0831a3fe2ed12004747db1a9c911a4'
+          V33_QUARANTINE_WALLETS: '0x31550df5402226b825f900a31659a05d809d268e,0x300317934bfe0cc8740affc7425b0cd3772530f5,0x6b1dbe91847aa95386fc63669ff910e68469a01a,0xa772e2ca9f119162d03330f3e66c0556a2068686'
+        run: |
+          python -m py_compile tools/v33_live_pilot_health.py tests/test_v33_live_pilot_health.py
+          python -m unittest discover -s tests -p 'test_v33_live_pilot_health.py' -v
+          python tools/v33_live_pilot_health.py
       - name: Offline proof that the 350 pilot only extends the existing qualified 300
         env:
           PYTHONPATH: .
@@ -166,5 +176,6 @@ jobs:
             artifacts/v33-broad-sports-watch-research.json
             artifacts/v33-broad-sports-pagination-benchmark.json
             artifacts/v33-broad-sports-deep-paging.json
+            artifacts/v33-350-live-pilot-health.json
           if-no-files-found: ignore
           retention-days: 7
