@@ -88,6 +88,28 @@ Observed input: `shadow_evidence` current ring has **900 keys** and previously s
 
 **Remaining rollout prerequisites:** a durable on-branch research-only quote/outcome checkpoint across runs; retention/eviction alerting if >12k entries or API budget can't drain; a balanced, source-time-matched prospective cohort after sufficient settlements. Do not alter risk thresholds or announce false-negative ROI from these two cases.
 
+## Persistent shadow archive deployed (research-only; 2026-10-18)
+
+**This supersedes the earlier one-time probe and is now active as an independent GitHub Actions research workflow.** The only addition to default branch `main` is [`.github/workflows/v33-shadow-archive-scheduler.yml`](https://github.com/kipchakcreator1/polymarket-tracker/blob/main/.github/workflows/v33-shadow-archive-scheduler.yml). It schedules research archival at minutes `07, 17, 27, 37, 47, 57` of each hour, using public data and at most **25 market-outcome classification attempts per run (150/hour theoretical)**. GitHub may delay or skip scheduled jobs, so timing is a target, not an SLA.
+
+- Sources are read from `v3.3-wallet-research` with read-only checkout; **no Telegram credentials, market orders or changes to the v3.3 executable/state/workflows** are involved.
+- The archive lives only on `audit/v33-risk-gate-20261017` at `research/v33-shadow-outcome-checkpoint.json`. Each run loads the last checkpoint, adds the latest ring observations, checks a bounded batch with official public market resolution endpoints, and commits this one JSON file to the audit branch. The old quote is retained after the 900-item source ring overwrites it.
+- Only `github-actions[bot]` research commits write the archive. No GitHub scheduled job here edits the trading code or sends BUY alerts. Both audit-branch canaries and the scheduled writer share a serialized concurrency group.
+- `tools/v33_shadow_checkpoint.py` enforces schema, timestamp, first-captured quote identity, retention and loss-of-coverage warnings. Unknown status is not counted as a loss or profit. `tools/v33_checkpoint_paper_comparison.py` computes hypothetical HOLD-to-settlement from ORIGINAL captured book asks, not source-wallet entry or backfilled CLOB prices. It de-duplicates repeated market conditions across cohorts, recalculates multiple fee/price-deterioration scenarios, and reports `actual_copy_trading_roi = null`.
+
+[Successfully completed scheduled archive and replay](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39108944062). At this particular run, the **6th saved checkpoint** contained **941 records**, of which **905 had preserved original book quotes**, with **814 yet-unconfirmed final results**. The archive is incomplete: 36 older observations lacked quote proof, and `coverage_breach_or_unknown = true`. This is correctly treated as a warning, not as an error-free full population.
+
+The new paper model at that run (conservative uniqueness at market-condition level):
+
+| Cohort | Distinct priced market conditions with final outcome | Wins | Losses | Hypothetical $5 HOLD ROI with *assumed* 5% fee | Model PnL |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `blocked_recent` shadow | 22 | 10 | 12 | **−16.88%** | −$18.57 on $110 |
+| Telegram-sent sports BUY | 3 | 1 | 2 | **−42.78%** | −$6.42 on $15 |
+
+These are small, unequal, observational **market-condition** samples collected at different times, not guaranteed independent sports games, actual fills, comparable odds or fees. The result **DOES NOT imply blocked trades were better than sent trades or that our filters should be relaxed**. Selection, settlement lag, omitted old quotes, markets with multiple wallet observations, and execution latency all bias this comparison. Even if both samples later exceed 30 priced conditions, only a time/league/odds-matched prospective counterfactual can support changes to risk gates.
+
+Capacity check at this run: the 900-entry ring spans ~8.9h, corresponding to about **101 sampled new quote keys/hour** *if* the ring represents a roughly stable arrival process; the archive configuration allows at most **150 classification attempts/hour**. These are proxies, not guarantees: some checks revisit unresolved matches; jobs can fail/skip and the backlog can continue growing. The checkpoint records actual new keys, backlog delta, the approximate number of runs needed to revisit the unresolved sample, coverage/eviction flags and original-quote availability. **Never silently assert complete false-negative/ROI coverage.**
+
 ## Still unresolved / next gate
 
 - The old universe shortlist still uses up to 100 **legacy closed positions** to rank and admit 300 wallets. It is not a complete economic or predictive ranking. Keep this behavior unchanged in production pending a real, event-level and cash-flow-reconciled replacement.
