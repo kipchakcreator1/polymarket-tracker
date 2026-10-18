@@ -20,7 +20,8 @@ def make_row(i, stream="telegram_sent", outcome="win", ask=.5,
         ("pnl_fee_rate_0.07", .07, 1),
         ("pnl_fee_0.05_plus_5pct_worse_entry", .05, 1.05),
     ):
-        pnl[name] = round(paper.paper_pnl(5, ask, outcome == "win", fee, mult), 5)
+        model = paper.paper_pnl(5, ask, outcome == "win", fee, mult)
+        pnl[name] = round(model, 5) if model is not None else None
     return {"wallet": wallet, "condition": condition(i),
             "token_id": T, "stream": stream, "status": status,
             "final_outcome": outcome,
