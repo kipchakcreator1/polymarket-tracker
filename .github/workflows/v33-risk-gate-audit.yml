@@ -53,6 +53,59 @@ jobs:
           python -m py_compile tools/v33_live_pilot_health.py tests/test_v33_live_pilot_health.py
           python -m unittest discover -s tests -p 'test_v33_live_pilot_health.py' -v
           python tools/v33_live_pilot_health.py
+      - name: Aggregate actual 1MB+ runtime caches and risk causes without leaking wallet data
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import json, pathlib, subprocess, time
+          root=pathlib.Path("v33-snapshot")
+          raw=json.loads((root/"research/v33_signal_state.json").read_text())
+          report=json.loads(pathlib.Path("artifacts/v33-350-live-pilot-health.json").read_text())
+          last=raw.get("last_run") or {}
+          git_time=subprocess.check_output([
+              "git","-C",str(root),"log","-1","--format=%ct","--",
+              "research/v33_signal_state.json"],text=True).strip()
+          cache_keys=("recent_form_cache","active_form_cache","market_focus_cache",
+                      "politics_cache","open_sent")
+          cache_counts={k:len(raw.get(k) or {}) for k in cache_keys}
+          groups={}
+          for name in ("old_300_reconstructed","additional_up_to_50"):
+              data=report["by_reconstructed_cohort"][name]
+              groups[name]={
+                  "observed_wallets":data["members_in_last_persisted_runtime"],
+                  "book_quotes_1h":data["prospective_book_quote_decisions"]["1h"]
+                                    ["quoted_observations"],
+                  "risk_reasons_1h":data["prospective_book_quote_decisions"]["1h"]
+                                    ["recorded_risk_gate_reasons"],
+                  "book_quotes_24h":data["prospective_book_quote_decisions"]["24h"]
+                                    ["quoted_observations"],
+                  "risk_reasons_24h":data["prospective_book_quote_decisions"]["24h"]
+                                    ["recorded_risk_gate_reasons"],
+              }
+          summary={
+              "checkpoint_epoch":int(git_time) if git_time.isdigit() else None,
+              "checkpoint_age_seconds":(
+                  round(time.time()-int(git_time)) if git_time.isdigit() else None),
+              "watching":last.get("watching"),
+              "request_errors":last.get("request_errors"),
+              "poll_gaps":last.get("poll_gaps"),
+              "cached_metrics_from_new_process":{
+                  k:last.get(k) for k in ("cached_risk_wallets",
+                      "cached_portfolio_wallets","cached_sports_market_meta",
+                      "cached_politics_market_meta")},
+              "current_saved_cache_key_counts":cache_counts,
+              "last_poll_new_fills":last.get("new_fills"),
+              "last_poll_sports_books":(last.get("this_poll") or {}).get("book_verified_sports",0),
+              "last_poll_major_loss_rejections":(
+                  last.get("this_poll") or {}).get("major_unredeemed_loss_cluster_90d",0),
+              "cohorts":groups,
+              "warning":"Quote journal incomplete; old reasons missing; no claim of ROI or client push delivery",
+          }
+          print("V33 LIVE STATE AGGREGATE",json.dumps(summary,sort_keys=True))
+          pathlib.Path("artifacts/v33-live-state-aggregate.json").write_text(
+              json.dumps(summary,indent=2,sort_keys=True)+"\\n")
+          PY
       - name: Offline proof that the 350 pilot only extends the existing qualified 300
         env:
           PYTHONPATH: .
@@ -177,5 +230,6 @@ jobs:
             artifacts/v33-broad-sports-pagination-benchmark.json
             artifacts/v33-broad-sports-deep-paging.json
             artifacts/v33-350-live-pilot-health.json
+            artifacts/v33-live-state-aggregate.json
           if-no-files-found: ignore
           retention-days: 7
