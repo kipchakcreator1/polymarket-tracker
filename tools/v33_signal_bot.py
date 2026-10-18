@@ -90,7 +90,7 @@ MAJOR_LOSS_MIN_USD = float(os.getenv("V33_MAJOR_UNREDEEMED_LOSS_USD", "100"))
 MAJOR_LOSS_MAX_90D = int(os.getenv("V33_MAX_MAJOR_LOSSES_90D", "3"))
 RECENT_MIN_POSITIVE_RATE = .60
 RECENT_MIN_PROFIT_FACTOR = 1.25
-RECENT_MAX_LOSS_STREAK = 1
+RECENT_MAX_LOSS_STREAK = int(os.getenv("V33_MAX_RECENT_LOSS_STREAK", "1"))
 MAX_FAST_TRADE_AGE = 75
 FAST_MARKET_END_BUFFER = 90
 RECENT_CACHE_SECONDS = 180
@@ -369,7 +369,7 @@ def fetch_recent_results(wallet, now):
             # additional pages can make this wallet eligible. This is a veto,
             # never a declaration of completed full history.
             if status == "REDEEMABLE_LOST":
-                if len(major_90d) > MAJOR_LOSS_MAX_90D:
+                if MAJOR_LOSS_MAX_90D >= 0 and len(major_90d) > MAJOR_LOSS_MAX_90D:
                     raise ConfirmedLossVeto("major_unredeemed_loss_cluster_90d")
                 if len(material_24h) > RECENT_MAX_UNREDEEMED_LOSSES_24H:
                     raise ConfirmedLossVeto("recent_unredeemed_loss_cluster")
@@ -484,7 +484,7 @@ def recent_form_reason(state, wallet, now):
         cache[wallet] = value
     if value["unredeemed_lost_24h"] > RECENT_MAX_UNREDEEMED_LOSSES_24H:
         return "recent_unredeemed_loss_cluster"
-    if value["major_unredeemed_lost_90d"] > MAJOR_LOSS_MAX_90D:
+    if MAJOR_LOSS_MAX_90D >= 0 and value["major_unredeemed_lost_90d"] > MAJOR_LOSS_MAX_90D:
         return "major_unredeemed_loss_cluster_90d"
     if value["closed"] < RECENT_CLOSED_WINDOW:
         return "recent_sample_too_small"
