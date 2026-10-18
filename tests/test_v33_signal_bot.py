@@ -94,7 +94,7 @@ class BotTests(unittest.TestCase):
         bot.add_fill(state, trade(price=.5), NOW)
         with mock.patch.object(bot, "political_market_reason", return_value=None), \
              mock.patch.object(bot, "check_trade", return_value=(None, "book_no_liquidity")), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             n = bot.deliver(state, {W: {"name": "Tester", "winrate": .88}}, NOW)
         self.assertEqual(n, 0)
         sender.assert_not_called()
@@ -109,7 +109,7 @@ class BotTests(unittest.TestCase):
                 {"price": .51, "best_ask": .51}, None)), \
              mock.patch.object(bot, "recent_form_reason", return_value=None), \
              mock.patch.object(bot, "active_form_reason", return_value=None), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             n = bot.deliver(state, meta, NOW)
             self.assertEqual(n, 1)
             sender.assert_called_once()
@@ -209,13 +209,14 @@ class BotTests(unittest.TestCase):
                  {"price": .51, "best_ask": .51}, None)), \
              mock.patch.object(bot.v2, "request_json",
                                side_effect=TimeoutError("offline")), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             count = bot.deliver(state, {W: {"name": "Test", "winrate": .88}}, NOW)
         self.assertEqual(count, 0)
         sender.assert_not_called()
         self.assertEqual(state["counters"]["recent_form_request_error"], 1)
         self.assertEqual(state["counters"]["recent_history_unverified"], 1)
-        self.assertEqual(len(state["pending"]), 0)  # never alert on unknown risk
+        self.assertEqual(len(state["pending"]), 1)  # retry while fresh, never send unknown
+        self.assertEqual(state["counters"]["recent_history_retry_queued"], 1)
 
     def test_repeated_incomplete_history_is_cached_and_cannot_send(self):
         state=bot.blank_state()
@@ -231,6 +232,85 @@ class BotTests(unittest.TestCase):
         self.assertEqual(state["counters"]["recent_form_request_error"],1)
         self.assertEqual(state["recent_form_cache"][W]["history_unverified"],True)
 
+
+    def test_transient_recent_api_failure_retries_after_short_cooldown(self):
+        state = bot.blank_state()
+        good = [{"realizedPnl": 4}] * 18 + [{"realizedPnl": -2}] * 2
+        with mock.patch.object(bot, "fetch_recent_results",
+                               side_effect=[RuntimeError(
+                                   "API network issue on /v2/positions: timed out"), good]) as fetch:
+            self.assertEqual(bot.recent_form_reason(state, W, NOW),
+                             "recent_history_unverified")
+            self.assertEqual(bot.recent_form_reason(state, W, NOW+40),
+                             "recent_history_unverified")
+            self.assertIsNone(bot.recent_form_reason(state, W, NOW+61))
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(state["counters"]["recent_api_transient"], 1)
+
+    def test_unverified_recent_history_is_retried_without_alerting_unchecked(self):
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.5), NOW)
+        meta = {W: {"name": "Test", "winrate": .8}}
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \\
+             mock.patch.object(bot, "check_trade", return_value=(
+                 {"price": .51, "best_ask": .51}, None)), \\
+             mock.patch.object(bot, "recent_form_reason",
+                               side_effect=["recent_history_unverified", None]) as risk, \\
+             mock.patch.object(bot, "active_form_reason", return_value=None), \\
+             mock.patch.object(bot.v2, "send_telegram", return_value=321) as sender:
+            self.assertEqual(bot.deliver(state, meta, NOW), 0)
+            self.assertEqual(len(state["pending"]), 1)
+            sender.assert_not_called()
+            self.assertEqual(bot.deliver(state, meta, NOW+61), 1)
+        self.assertEqual(risk.call_count, 2)
+        self.assertEqual(sender.call_count, 1)
+        self.assertEqual(state["counters"]["recent_history_retry_queued"], 1)
+        self.assertEqual(state["counters"]["alerts_sent"], 1)
+
+    def test_unverified_history_never_promoted_after_expiry(self):
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.5), NOW)
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \\
+             mock.patch.object(bot, "check_trade", return_value=(
+                 {"price": .51, "best_ask": .51}, None)), \\
+             mock.patch.object(bot, "recent_form_reason",
+                               return_value="recent_history_unverified"), \\
+             mock.patch.object(bot.v2, "send_telegram") as sender:
+            self.assertEqual(bot.deliver(state, {W: {"name": "", "winrate": .8}},
+                                         NOW+bot.MAX_AGE), 0)
+        sender.assert_not_called()
+        self.assertEqual(state["counters"]["recent_history_expired_unverified"], 1)
+        self.assertEqual(state["pending"], {})
+
+    def test_buy_not_marked_sent_without_positive_telegram_message_id(self):
+        state = bot.blank_state()
+        bot.add_fill(state, trade(price=.5), NOW)
+        meta = {W: {"name": "Test", "winrate": .8}}
+        with mock.patch.object(bot, "political_market_reason", return_value=None), \\
+             mock.patch.object(bot, "check_trade", return_value=(
+                 {"price": .51, "best_ask": .51}, None)), \\
+             mock.patch.object(bot, "recent_form_reason", return_value=None), \\
+             mock.patch.object(bot, "active_form_reason", return_value=None), \\
+             mock.patch.object(bot.v2, "send_telegram",
+                               side_effect=[None, 567]) as sender:
+            self.assertEqual(bot.deliver(state, meta, NOW), 0)
+            self.assertEqual(len(state["pending"]), 1)
+            self.assertEqual(state["counters"].get("alerts_sent", 0), 0)
+            self.assertFalse(state["sent"])
+            self.assertEqual(bot.deliver(state, meta, NOW+60), 1)
+        self.assertEqual(sender.call_count, 2)
+        self.assertEqual(state["counters"]["telegram_error"], 1)
+        self.assertEqual(state["counters"]["alerts_sent"], 1)
+
+    def test_invalid_future_position_timestamp_exposes_numeric_diagnostic(self):
+        now = 1792223000
+        with mock.patch.object(bot.time, "time", return_value=now):
+            with self.assertRaises(ValueError) as ctx:
+                bot.position_activity_timestamp((now+900)*1000, now)
+        self.assertIn("Position activity timestamp invalid", str(ctx.exception))
+        self.assertIn("raw=", str(ctx.exception))
+        self.assertIn("latest_allowed=", str(ctx.exception))
+
     def test_recent_seven_losses_stop_alert_even_with_high_old_winrate(self):
         state = bot.blank_state()
         bot.add_fill(state, trade(price=.5), NOW)
@@ -239,7 +319,7 @@ class BotTests(unittest.TestCase):
              mock.patch.object(bot, "check_trade", return_value=(
                  {"price": .51, "best_ask": .51}, None)), \
              mock.patch.object(bot, "fetch_recent_results", return_value=rows), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             count = bot.deliver(state, {W: {"name": "Test", "winrate": .91}}, NOW)
         self.assertEqual(count, 0)
         sender.assert_not_called()
@@ -360,7 +440,7 @@ class BotTests(unittest.TestCase):
         with mock.patch.object(bot, "political_market_reason", return_value=None), \
              mock.patch.object(bot, "check_trade",
                                return_value=({"price": .61}, None)), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             count = bot.deliver(state, selected, NOW)
         self.assertEqual(count, 0)
         sender.assert_not_called()
@@ -514,7 +594,7 @@ class BotTests(unittest.TestCase):
              mock.patch.object(bot, "recent_form_reason", return_value=None), \
              mock.patch.object(bot.v2, "request_json",
                                side_effect=TimeoutError("public API unavailable")), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             count = bot.deliver(
                 state, {W: {"name": "Trader", "winrate": .93}}, NOW)
         self.assertEqual(count, 0)
@@ -606,7 +686,7 @@ class BotTests(unittest.TestCase):
         row["event_slug"] = "us-presidential-election"
         bot.add_fill(state, row, NOW)
         with mock.patch.object(bot, "check_trade") as quote_check, \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             count = bot.deliver(
                 state, {W: {"name": "Trader", "winrate": .91}}, NOW)
         self.assertEqual(count, 0)
@@ -872,7 +952,7 @@ class BotTests(unittest.TestCase):
              mock.patch.object(bot, "check_trade", side_effect=quote), \
              mock.patch.object(bot, "recent_form_reason", return_value=None), \
              mock.patch.object(bot, "active_form_reason", return_value=None), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             self.assertTrue(bot.add_fill(state, trade(), NOW))
             self.assertEqual(bot.deliver(state, base, NOW), 1)
             newer = dict(trade(timestamp=NOW + 29*60), transaction_hash="newer")
@@ -895,7 +975,7 @@ class BotTests(unittest.TestCase):
              mock.patch.object(bot, "check_trade", return_value=({"price": .6}, None)), \
              mock.patch.object(bot, "recent_form_reason", return_value=None), \
              mock.patch.object(bot, "active_form_reason", return_value=None), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             counter = iter([now, now+35])
             result = bot.deliver(state, {W: {"name": "", "winrate": .78}},
                                  now, clock=lambda: next(counter))
@@ -923,7 +1003,7 @@ class BotTests(unittest.TestCase):
                   rival: {"name": "B", "winrate": .8}}
         with mock.patch.object(bot, "political_market_reason",
                                return_value=None), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             self.assertEqual(bot.notify_opposing_wallets(state, chosen, NOW), 1)
             self.assertEqual(bot.notify_opposing_wallets(state, chosen, NOW+30), 0)
         self.assertEqual(sender.call_count, 1)
@@ -941,7 +1021,7 @@ class BotTests(unittest.TestCase):
         bot.add_fill(state, dict(trade(), proxy_wallet=rival,
                                  transaction_hash="other-hash"), NOW)
         selected = {W: {}, rival: {}}
-        with mock.patch.object(bot.v2, "send_telegram") as sender:
+        with mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             self.assertEqual(bot.notify_opposing_wallets(
                 state, selected, NOW), 0)
         sender.assert_not_called()
@@ -954,7 +1034,7 @@ class BotTests(unittest.TestCase):
                                  token_id="other", transaction_hash="different"), NOW)
         with mock.patch.object(bot, "political_market_reason",
                                return_value="political_market"), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             self.assertEqual(bot.notify_opposing_wallets(
                 state, {W: {}, rival: {}}, NOW), 0)
         sender.assert_not_called()
@@ -973,7 +1053,7 @@ class BotTests(unittest.TestCase):
                                return_value=({"price": .5}, None)), \
              mock.patch.object(bot, "recent_form_reason", return_value=None), \
              mock.patch.object(bot, "active_form_reason", return_value=None), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             self.assertTrue(bot.add_fill(state, first, NOW))
             self.assertEqual(bot.deliver(state, chosen, NOW), 0)
             self.assertEqual(len(state["pending"]), 1)
@@ -1129,7 +1209,7 @@ class BotTests(unittest.TestCase):
         group = next(iter(state["pending"].values()))
         with mock.patch.object(bot, "MARKET_FOCUS", "crypto_short"), \
              mock.patch.object(bot.v2, "request_json") as api, \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             self.assertEqual(bot.market_focus_reason(state, group, NOW),
                              "off_topic_market")
             self.assertEqual(bot.deliver(state, {W: {"name": "", "winrate": .8}},
@@ -1283,7 +1363,7 @@ class BotTests(unittest.TestCase):
              mock.patch.object(bot, "political_market_reason", return_value=None), \
              mock.patch.object(bot, "check_trade", return_value=(
                  None, "book_no_liquidity")), \
-             mock.patch.object(bot.v2, "send_telegram") as sender:
+             mock.patch.object(bot.v2, "send_telegram", return_value=123) as sender:
             self.assertEqual(bot.deliver(
                 state, {W: {"name": "", "winrate": .8}}, now), 0)
         sender.assert_not_called()
