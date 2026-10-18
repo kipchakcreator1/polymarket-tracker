@@ -61,6 +61,17 @@ jobs:
           python -m py_compile tools/v33_broad_sports_research.py tests/test_v33_broad_sports_research.py
           python -m unittest discover -s tests -p 'test_v33_broad_sports_research.py' -v
           python tools/v33_broad_sports_research.py
+      - name: Offline test restricted public trade capacity canary
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_broad_sports_capacity_canary.py tests/test_v33_broad_sports_capacity_canary.py
+          python -m unittest discover -s tests -p 'test_v33_broad_sports_capacity_canary.py' -v
+      - name: Probe 24 unmonitored sports-discovered wallets via one-page v2 reads
+        continue-on-error: true
+        env:
+          PYTHONPATH: .
+        run: python tools/v33_broad_sports_capacity_canary.py
       - name: Test durable rejected quote archival and old-first resolution audit
         env:
           PYTHONPATH: .
@@ -103,5 +114,6 @@ jobs:
             artifacts/v33-copyability-gate.json
             artifacts/v33-shadow-resolution-probe.json
             artifacts/v33-broad-sports-watch-research.json
+            artifacts/v33-broad-sports-capacity-probe.json
           if-no-files-found: ignore
           retention-days: 7
