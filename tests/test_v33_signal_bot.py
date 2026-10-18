@@ -26,6 +26,19 @@ class BotTests(unittest.TestCase):
         self.addCleanup(focus.stop)
 
 
+    def test_disabled_major_loss_veto_does_not_reuse_old_cached_block(self):
+        state = bot.blank_state()
+        state["recent_form_cache"][W] = {
+            "checked_at": NOW,
+            "confirmed_risk_veto": "major_unredeemed_loss_cluster_90d",
+        }
+        rows = [{"realizedPnl": 10, "timestamp": NOW - 100 - i,
+                 "_unredeemed_lost": False} for i in range(20)]
+        with mock.patch.object(bot, "MAJOR_LOSS_MAX_90D", -1), \
+             mock.patch.object(bot, "fetch_recent_results", return_value=rows) as fetch:
+            self.assertIsNone(bot.recent_form_reason(state, W, NOW))
+            fetch.assert_called_once()
+
     def test_active_portfolio_transient_error_retries(self):
         response = {"data": [], "pagination": {"has_more": False}}
         with mock.patch.object(bot.v2, "request_json",
