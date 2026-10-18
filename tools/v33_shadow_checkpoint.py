@@ -155,6 +155,15 @@ def build_checkpoint(previous, state, report, now=None,
     checked = verifier(sent, {}, {}, merged, live, max_checks=max_checks,
                        historical_shadow=True)
     after = {key_parts(row): row for row in checked if key_parts(row)}
+    for ident, row in after.items():
+        key = "|".join(ident)
+        current = live.get(key) or {}
+        # The decision observed when the original quote was saved remains
+        # stable; no later state mutation is allowed to relabel a blocked pick.
+        if not row.get("shadow_decision") and isinstance(current, dict):
+            decision = current.get("decision")
+            if isinstance(decision, str) and decision:
+                row["shadow_decision"] = decision
     newly_final = [row for k, row in after.items() if
                    row.get("result") in ("win", "loss") and
                    before.get(k) not in ("win", "loss")]
