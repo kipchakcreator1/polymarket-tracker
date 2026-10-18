@@ -1183,7 +1183,11 @@ def deliver(state, selected, now, *, clock=None):
             continue  # retry while trade is fresh; never send unchecked
         if recent_reason:
             if topic == "sports":
-                state["shadow_evidence"][dedupe]["decision"] = "blocked_recent"
+                observed = state["shadow_evidence"][dedupe]
+                observed["decision"] = "blocked_recent"
+                observed["risk_gate"] = "recent"
+                observed["risk_reason"] = recent_reason
+                observed["risk_checked_at"] = checked_at
             mark(state, recent_reason)
             del state["pending"][key]
             continue
@@ -1197,7 +1201,11 @@ def deliver(state, selected, now, *, clock=None):
             continue  # never send when active PnL cannot be verified
         if active_reason:
             if topic == "sports":
-                state["shadow_evidence"][dedupe]["decision"] = "blocked_active"
+                observed = state["shadow_evidence"][dedupe]
+                observed["decision"] = "blocked_active"
+                observed["risk_gate"] = "active_portfolio"
+                observed["risk_reason"] = active_reason
+                observed["risk_checked_at"] = checked_at
             mark(state, active_reason)
             del state["pending"][key]
             continue
@@ -1232,7 +1240,11 @@ def deliver(state, selected, now, *, clock=None):
             continue  # unsent pending trade remains available for retry
         state["sent"][dedupe] = send_at
         if topic == "sports" and dedupe in state.get("shadow_evidence", {}):
-            state["shadow_evidence"][dedupe]["decision"] = "sent_telegram"
+            observed = state["shadow_evidence"][dedupe]
+            observed["decision"] = "sent_telegram"
+            observed["risk_gate"] = "passed"
+            observed["risk_reason"] = None
+            observed["risk_checked_at"] = send_at
         if isinstance(receipt, int) and receipt > 0:
             state["last_telegram_acceptance"] = {
                 "at": send_at, "message_id": receipt, "kind": "buy",
