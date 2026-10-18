@@ -73,6 +73,28 @@ class OpenSportsAlertTests(unittest.TestCase):
         self.assertNotIn("alerts_sent",state["counters"])
         self.assertEqual(state["sent"],{})  # NEVER mark this as a fresh BUY
 
+    def test_late_telegram_ack_keeps_open_dedupe_for_24_hours(self):
+        # Real public API verification can take seconds after checked_at.
+        # The 24-hour repeat key must survive that normal clock skew.
+        state=bot.blank_state()
+        times=iter((NOW,NOW+2,NOW+3700,NOW+3702))
+        with (
+            mock.patch.object(bot,"MARKET_FOCUS","sports_btc"),
+            mock.patch.object(bot,"recent_form_reason",return_value=None),
+            mock.patch.object(bot,"fetch_open_positions",return_value=[held()]),
+            mock.patch.object(bot,"market_focus_reason",side_effect=sports),
+            mock.patch.object(bot,"political_market_reason",return_value=None),
+            mock.patch.object(bot,"check_trade",side_effect=quote),
+            mock.patch.object(bot.v32,"market_accepts_orders",return_value=True),
+            mock.patch.object(bot.v2,"send_telegram",return_value=471) as send,
+        ):
+            self.assertEqual(op.scan(state,META,NOW,clock=lambda:next(times)),1)
+            self.assertEqual(len(state["open_sent"]),1)
+            self.assertEqual(op.scan(state,META,NOW+3700,
+                                     clock=lambda:next(times)),0)
+        self.assertEqual(send.call_count,1)
+        self.assertEqual(state["counters"]["open_alerts_sent"],1)
+
     def test_no_alert_when_risk_unavailable(self):
         state=bot.blank_state()
         with mock.patch.object(bot,"MARKET_FOCUS","sports_btc"), \
