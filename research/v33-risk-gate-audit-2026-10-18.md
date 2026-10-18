@@ -120,6 +120,16 @@ An additional `original_quote_outcome_maturity_by_time_odds` groups saved quote 
 
 The audit branch's offline suite includes regression tests for one-to-one support, collision attribution, unknown-outcome maturity and missing original quote proof. Production Telegram decision rules remain unchanged; any live filtering change still needs a sports-event/outcome-matched prospective experiment.
 
+## First independently scheduled cron run verified, not merely workflow pushes
+
+[GitHub scheduled event #39110145472](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39110145472) successfully executed with event type **`schedule`**, not `push`. It loaded the previous audit-branch checkpoint, ran 10 durable-checkpoint tests, 37 sports-truth tests and 13 paper-comparison tests, read the v3.3 research state **without modifying it**, committed the checkpoint to the isolated audit branch, and published aggregate health artifacts.
+
+At checkpoint **run 11**: **981** stored quote/outcome records, **945** first-observation book quotes, **36** without original quote; **761** records without terminal verified outcome; **4** genuinely new quote IDs since the previous checkpoint and a 14-record reduction in the nonterminal queue. The ceiling remains 25 public outcome checks each scheduled run, six runs/hour if GitHub does not skip/delay it. The `coverage_breach_or_unknown` flag remains **true** because older quotes are missing; no claim of full history or calculated real trading PnL is authorized.
+
+The quote-maturity inventory at this run includes **381 unique rejected quote conditions (27 final, 354 pending/unverified)** and **8 sent quote conditions (3 final, 5 pending/unverified)**. The stricter PnL candidate screen gives **31 blocked and 1 sent distinct eligible conditions**, after excluding duplicated markets; **18 market conditions collided**, of which **2 crossed sent and blocked cohorts**. A one-to-one price gap <=5 cents and time gap <=6h yields **0 comparable quote pairs**. Accordingly, all cross-cohort *causal* differences and actual execution ROI remain **null** and no production wallet/risk changes are made.
+
+[Full passing audit suite #39110157697](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39110157697) reported **205/205 tests passed** after the new collision and censoring diagnostics. This is a unit/integration CI signal, not a profitability backtest.
+
 ## Still unresolved / next gate
 
 - The old universe shortlist still uses up to 100 **legacy closed positions** to rank and admit 300 wallets. It is not a complete economic or predictive ranking. Keep this behavior unchanged in production pending a real, event-level and cash-flow-reconciled replacement.
