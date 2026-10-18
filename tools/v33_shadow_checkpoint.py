@@ -211,6 +211,7 @@ def build_checkpoint(previous, state, report, now=None,
         if at is not None and at >= now-RETENTION:
             sent["|".join(ident)] = at
     before = {key_parts(row): row.get("result") for row in merged}
+    persisted_by_id = {key_parts(row): row for row in merged if key_parts(row)}
     before_keys = {"|".join(key_parts(row)) for row in merged
                    if key_parts(row)}
     verifier = verifier or truth.audit_signals
@@ -219,6 +220,17 @@ def build_checkpoint(previous, state, report, now=None,
     after = {key_parts(row): row for row in checked if key_parts(row)}
     for ident, row in after.items():
         key = "|".join(ident)
+        old_persisted = persisted_by_id.get(ident)
+        # v2 resolution re-query reconstructs a compact outcome row. Carry
+        # forward the immutable verified source-time verdict independently
+        # from its public market settlement record.
+        if (isinstance(old_persisted, dict) and
+                old_persisted.get("risk_provenance") ==
+                "same_original_live_quote_at_archive_capture"):
+            for field in ("risk_gate","risk_reason","risk_checked_at",
+                          "risk_provenance"):
+                if field not in row and field in old_persisted:
+                    row[field] = old_persisted[field]
         current = live.get(key) or {}
         # The decision observed when the original quote was saved remains
         # stable; no later state mutation is allowed to relabel a blocked pick.
