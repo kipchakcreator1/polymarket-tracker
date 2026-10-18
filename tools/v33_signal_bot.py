@@ -1190,6 +1190,12 @@ def deliver(state, selected, now, *, clock=None):
         if recent_reason == "recent_history_unverified":
             # API uncertainty is not a confirmed wallet loss. Keep the
             # candidate for another attempt while the trade stays fresh.
+            if topic == "sports":
+                observed = state["shadow_evidence"][dedupe]
+                observed["decision"] = "retry_recent_api"
+                observed["risk_gate"] = "recent"
+                observed["risk_reason"] = recent_reason
+                observed["risk_checked_at"] = checked_at
             mark(state, recent_reason)
             continue
         if recent_reason:
