@@ -150,7 +150,8 @@ def build_checkpoint(previous, state, report, now=None,
         if at is not None and at >= now-RETENTION:
             sent["|".join(ident)] = at
     before = {key_parts(row): row.get("result") for row in merged}
-    before_keys = {key_parts(row) for row in merged}
+    before_keys = {"|".join(key_parts(row)) for row in merged
+                   if key_parts(row)}
     verifier = verifier or truth.audit_signals
     checked = verifier(sent, {}, {}, merged, live, max_checks=max_checks,
                        historical_shadow=True)
