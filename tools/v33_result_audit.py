@@ -29,6 +29,8 @@ TRADE_PAGE_SIZE = 250
 TRADE_LOOKBACK_DAYS = max(30, min(365, int(os.getenv("V33_TRUTH_LOOKBACK_DAYS", "180"))))
 MAX_CONDITIONS_PER_WALLET = 140
 MAX_SIGNAL_CONDITIONS = 90  # bounded refresh per run; retain previous observations
+SHADOW_MAX_RETAINED = 12000  # bounded prospective quote+outcome journal
+SHADOW_RETENTION_SECONDS = 45*86400  # allow future-game resolution and API delay
 MAX_WALLET_OBSERVATIONS = 30
 
 
@@ -236,15 +238,68 @@ def safe_condition(value):
 
 
 def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
-                  signal_evidence=None, max_checks=MAX_SIGNAL_CONDITIONS):
-    """Keep final verified evidence, refresh unresolved rows without faking PnL."""
+                  signal_evidence=None, max_checks=MAX_SIGNAL_CONDITIONS,
+                  historical_shadow=False):
+    """Resolve signals without confounding unknown, stale or final outcomes.
+
+    In historical_shadow mode, keep bounded prior quoted picks after the live
+    900-entry rolling cache drops them. Oldest unchecked/retryable first,
+    rather than endlessly fetching only new markets.
+    """
     saved = { (x.get("wallet"), x.get("condition"), x.get("token_id")): x
               for x in (previous_rows or []) if isinstance(x, dict) }
     signal_evidence = signal_evidence or {}
     results = []
     work = 0
     check_now = int(time.time())
-    for key, stamp in sorted(sent.items(), key=lambda x: -int(x[1])):
+    if historical_shadow:
+        since = check_now-SHADOW_RETENTION_SECONDS
+        merged = {}
+        for key, stamp in sent.items():
+            try:
+                timestamp = int(stamp)
+            except (ValueError, TypeError, OverflowError):
+                continue
+            if since <= timestamp <= check_now+300:
+                merged[key] = timestamp
+        # Recover pending and resolved rows from the previous report without
+        # altering their ORIGINAL quote; never invent a quote retroactively.
+        for old in saved.values():
+            if not isinstance(old, dict):
+                continue
+            key_parts = (old.get("wallet"), old.get("condition"),
+                         old.get("token_id"))
+            if not all(isinstance(x, str) and x for x in key_parts):
+                continue
+            try:
+                timestamp = int(old.get("alert_at") or 0)
+            except (ValueError, TypeError, OverflowError):
+                continue
+            if since <= timestamp <= check_now+300:
+                merged.setdefault("|".join(key_parts), timestamp)
+        if len(merged) > SHADOW_MAX_RETAINED:
+            merged = dict(sorted(merged.items(), key=lambda item: -item[1])
+                          [:SHADOW_MAX_RETAINED])
+        def shadow_priority(pair):
+            key, stamp = pair
+            pieces = key.split("|")
+            old = saved.get(tuple(pieces)) if len(pieces) == 3 else None
+            if not isinstance(old, dict):
+                return (0, 0, stamp)
+            result = str(old.get("result") or "")
+            if result in ("win", "loss", "push_or_partial",
+                          "not_verified_sport"):
+                return (3, 0, stamp)
+            last = int(old.get("checked_at") or 0)
+            # Prefer never-checked records and older pending refreshes; recent
+            # 1-hour UNKNOWN results do not consume an API request.
+            if result.startswith("unknown") and check_now-last < 3600:
+                return (2, last, stamp)
+            return (1, last, stamp)
+        ordered = sorted(merged.items(), key=shadow_priority)
+    else:
+        ordered = sorted(sent.items(), key=lambda x: -int(x[1]))
+    for key, stamp in ordered:
         parts = key.split("|")
         if len(parts) != 3 or not api.WALLET_RE.fullmatch(parts[0]):
             continue
@@ -274,10 +329,46 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
                    "token_id": token, "alert_at": stamp,
                    "checked_at": check_now,
                    "settled_at": settled, "result": label}
-        # A hypothetical $5 book quote, *never* the user's actual copy fill.
-        # Only after final 0/1 payout; prior alerts lack entry-price evidence.
+        # A hypothetical $5 book quote, NEVER the user's actual copy fill.
+        # Archive a contemporaneously recorded quote exactly once, so that
+        # the quote remains available after the 900-entry live ring evicts it.
         paper = signal_evidence.get(key)
         row = dict(row)
+        if historical_shadow:
+            archived = row.get("original_book_quote")
+            if not isinstance(archived, dict):
+                archived = None
+            if archived is None and isinstance(paper, dict):
+                try:
+                    ask = float(paper.get("hypothetical_copy_ask"))
+                    stake = float(paper.get("hypothetical_copy_stake_usd"))
+                    shares = float(paper.get("hypothetical_copy_shares"))
+                    quoted_at = int(paper.get("book_quoted_at") or
+                                    paper.get("quoted_at") or 0)
+                    source_at = int(paper.get("source_trade_at") or 0)
+                except (ValueError, TypeError, OverflowError):
+                    pass
+                else:
+                    if (paper.get("topic") == "sports" and
+                            math.isfinite(ask) and 0 < ask < 1 and
+                            math.isfinite(stake) and 0 < stake <= 100 and
+                            math.isfinite(shares) and shares > 0 and
+                            math.isclose(ask*shares, stake,
+                                         rel_tol=.025, abs_tol=.025) and
+                            0 < quoted_at <= check_now+300 and
+                            source_at <= quoted_at+300 and
+                            0 < quoted_at-stamp < SHADOW_RETENTION_SECONDS):
+                        archived = {
+                            "hypothetical_copy_ask": ask,
+                            "hypothetical_copy_stake_usd": stake,
+                            "hypothetical_copy_shares": shares,
+                            "book_quoted_at": quoted_at,
+                            "source_trade_at": source_at,
+                            "topic": "sports",
+                            "no_fill_assumed": True,
+                        }
+                        row["original_book_quote"] = archived
+            paper = archived
         if (row["result"] in ("win", "loss") and isinstance(paper, dict)
                 and paper.get("topic") == "sports"):
             try:
@@ -772,11 +863,12 @@ def main():
                    for key, value in shadow.items()
                    if isinstance(value, dict) and value.get("quoted_at")}
     shadow_rows = audit_signals(shadow_sent, gamma_cache, resolution_cache,
-        previous.get("shadows", {}).get("rows"), shadow, max_checks=25)
+        previous.get("shadows", {}).get("rows"), shadow, max_checks=25,
+        historical_shadow=True)
     for row in shadow_rows:
         key = row["wallet"]+"|"+row["condition"]+"|"+row["token_id"]
-        row["shadow_decision"] = (shadow.get(key) or {}).get("decision",
-                                                             "not_in_state")
+        row["shadow_decision"] = (shadow.get(key) or {}).get(
+            "decision", row.get("shadow_decision", "not_in_state"))
         row["not_a_telegram_signal"] = True
     wallets, next_index = choose_wallets(shortlist, previous)
     wallet_results = dict(previous.get("wallets") or {})
