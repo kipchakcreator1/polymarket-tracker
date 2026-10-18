@@ -6,7 +6,7 @@ from tools import v33_heavy_wallet_deep_paging as d
 NOW = 1792318500
 
 def wallet(i):
-    return "0x"+format(i+1,"040x")
+    return "0x"+format(i+1,"02x")+"0"*38
 
 
 def sources(n=4):
