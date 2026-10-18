@@ -78,6 +78,16 @@ This upgrade is covered by five additional regression cases, including starvatio
 
 **Next validation gate:** independently instrument or safely canary the shadow outcome collector over multiple completed sports events and show a resolved sample for both rejected and sent groups, quote-age distribution, unresolvedness/retention gaps, and paper outcomes with explicit fee assumptions. Only then compare filters; any results remain observational and not actual net copy-trading performance.
 
+## One-time public v2 shadow outcome canary: 2 blocked wins without original prices
+
+The [successful audit-branch probe run](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39106695551) executed `tools/v33_shadow_resolution_probe.py` using the most recent read-only `v3.3-wallet-research` snapshots and at most **10 new public settlement classifications**, without Telegram or orders. The additional **3 offline probe tests** also passed, making the run's totals **181/181 tests passed** (108 + 8 + 5 + 9 + 37 + 3 + 11).
+
+Observed input: `shadow_evidence` current ring has **900 keys** and previously saved `shadows.rows` has **900 rows**. The audit-branch archival/recheck function retained **984 keys**, demonstrating that the old behavior silently lost references outside the current 900-entry ring. The 984 outcomes included **773 not checked, 202 unresolved/pending, 7 not verified sport, 2 verified wins**. The **two independently classified wins** belonged to `blocked_recent` shadow decisions according to the original decision snapshots (confirmed by the follow-up probe). **Neither of those two resolved wins had its contemporaneous original quote available**, therefore **NO model copy entry return or missed profit can be calculated for them**. Of the 984 retained picks, 900 had contemporaneous quote fields available and 84 did not; this is a bounded read-only trial, **not** production archival after deployment.
+
+**Interpretation:** Some verified winning market directions were blocked by the recent-form gate; this is *not evidence that the gate has negative expected value*, because losers and unresolved outcomes remain censored, no independent event-level denominator is proven, and the two wins lack their original executable quote. The re-query is ephemeral: because this probe does not write the source truth report back to production, repeated runs may rediscover the same two wins and must **not** be counted as new wins each time.
+
+**Remaining rollout prerequisites:** a durable on-branch research-only quote/outcome checkpoint across runs; retention/eviction alerting if >12k entries or API budget can't drain; a balanced, source-time-matched prospective cohort after sufficient settlements. Do not alter risk thresholds or announce false-negative ROI from these two cases.
+
 ## Still unresolved / next gate
 
 - The old universe shortlist still uses up to 100 **legacy closed positions** to rank and admit 300 wallets. It is not a complete economic or predictive ranking. Keep this behavior unchanged in production pending a real, event-level and cash-flow-reconciled replacement.
