@@ -174,6 +174,103 @@ class DurableCheckpointTests(unittest.TestCase):
         self.assertEqual(m["nonterminal_backlog_change_from_previous_run"],1)
         self.assertTrue(m["nonterminal_backlog_grew"])
 
+    def test_verified_recent_risk_reason_survives_market_settlement_and_ring_eviction(self):
+        current=live()
+        current.update({"decision":"blocked_recent","risk_gate":"recent",
+                        "risk_reason":"major_unredeemed_loss_cluster_90d",
+                        "risk_checked_at":NOW-50})
+        with mock.patch.object(truth.time,"time",return_value=NOW), \
+             mock.patch.object(truth,"classify",
+                               return_value=("unknown_resolution_pending",None)):
+            first=mod.build_checkpoint(None,*inputs({K:current}),
+                                      now=NOW,max_checks=1)
+        row=first["rows"][0]
+        self.assertEqual(row["risk_reason"],"major_unredeemed_loss_cluster_90d")
+        self.assertEqual(row["risk_gate"],"recent")
+        self.assertEqual(first["meta"]["captured_exact_reasons_by_gate"],
+                         {"recent:major_unredeemed_loss_cluster_90d":1})
+        later=NOW+3700
+        with mock.patch.object(truth.time,"time",return_value=later), \
+             mock.patch.object(truth,"classify",return_value=("loss",later-10)):
+            second=mod.build_checkpoint(first,*inputs({}),
+                                         now=later,max_checks=1)
+        self.assertEqual(second["rows"][0]["risk_reason"],
+                         "major_unredeemed_loss_cluster_90d")
+        self.assertEqual(second["rows"][0]["result"],"loss")
+        self.assertEqual(second["meta"]["captured_exact_verdicts_by_gate"],
+                         {"recent":1})
+
+    def test_original_unknown_or_book_only_can_be_upgraded_not_backfilled(self):
+        pending=live()
+        pending["decision"]="awaiting_recent_history"
+        with mock.patch.object(truth.time,"time",return_value=NOW), \
+             mock.patch.object(truth,"classify",
+                               return_value=("unknown_resolution_pending",None)):
+            first=mod.build_checkpoint(None,*inputs({K:pending}),
+                                      now=NOW,max_checks=1)
+        self.assertNotIn("risk_reason",first["rows"][0])
+        current=live()
+        current.update({"decision":"blocked_recent","risk_gate":"recent",
+                        "risk_reason":"recent_history_unverified",
+                        "risk_checked_at":NOW+22})
+        with mock.patch.object(truth.time,"time",return_value=NOW+60), \
+             mock.patch.object(truth,"classify",
+                               side_effect=AssertionError("hourly cache must hold")):
+            second=mod.build_checkpoint(first,*inputs({K:current}),
+                                        now=NOW+60,max_checks=1)
+        self.assertEqual(second["rows"][0]["shadow_decision"],"blocked_recent")
+        self.assertEqual(second["rows"][0]["risk_reason"],
+                         "recent_history_unverified")
+        self.assertEqual(second["rows"][0]["original_book_quote"],
+                         first["rows"][0]["original_book_quote"])
+
+    def test_invalid_provenance_cannot_attach_later_unrelated_risk(self):
+        for tamper in ({"quoted_at":NOW-100},
+                       {"risk_checked_at":NOW+5000},
+                       {"risk_gate":"active_portfolio"},
+                       {"risk_reason":"fake\\nresponse"}):
+            row={"alert_at":NOW-50,"shadow_decision":"blocked_recent"}
+            observed=live()
+            observed.update({"decision":"blocked_recent","risk_gate":"recent",
+                             "risk_reason":"recent_history_unverified",
+                             "risk_checked_at":NOW-50})
+            observed.update(tamper)
+            self.assertFalse(mod.capture_original_risk_verdict(row,observed,NOW))
+            self.assertNotIn("risk_reason",row)
+
+    def test_existing_proven_risk_reason_immutable_after_source_changes(self):
+        row={"alert_at":NOW-50,"shadow_decision":"blocked_recent",
+             "risk_gate":"recent",
+             "risk_reason":"major_unredeemed_loss_cluster_90d",
+             "risk_checked_at":NOW-50}
+        current=live()
+        current.update({"risk_gate":"recent",
+                        "risk_reason":"recent_history_unverified",
+                        "risk_checked_at":NOW-45})
+        self.assertFalse(mod.capture_original_risk_verdict(row,current,NOW))
+        self.assertEqual(row["risk_reason"],"major_unredeemed_loss_cluster_90d")
+
+    def test_verified_sent_passed_gate_without_inventing_loss_reason(self):
+        row={"alert_at":NOW-50,"shadow_decision":"book_verified_only"}
+        current=live(decision="sent_telegram")
+        current.update({"risk_gate":"passed","risk_reason":None,
+                        "risk_checked_at":NOW-45})
+        self.assertTrue(mod.capture_original_risk_verdict(row,current,NOW))
+        self.assertEqual(row["shadow_decision"],"sent_telegram")
+        self.assertEqual(row["risk_gate"],"passed")
+        self.assertIsNone(row["risk_reason"])
+
+    def test_legacy_absent_risk_metadata_remains_unknown_forever(self):
+        old=live()
+        old["decision"]="blocked_recent"
+        with mock.patch.object(truth.time,"time",return_value=NOW), \
+             mock.patch.object(truth,"classify",return_value=("win",NOW+50)):
+            archive=mod.build_checkpoint(None,*inputs({K:old}),
+                                         now=NOW,max_checks=1)
+        self.assertNotIn("risk_reason",archive["rows"][0])
+        self.assertEqual(archive["meta"]["captured_exact_verdicts_by_gate"],{})
+        self.assertEqual(archive["meta"]["exact_reason_unavailable_or_legacy_rows"],1)
+
     def test_invalid_schema_or_budget_fails_closed(self):
         with self.assertRaises(ValueError):
             mod.safe_prev({"schema":"wrong","rows":[]})
