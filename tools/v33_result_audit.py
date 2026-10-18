@@ -356,8 +356,8 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
                             math.isclose(ask*shares, stake,
                                          rel_tol=.025, abs_tol=.025) and
                             0 < quoted_at <= check_now+300 and
-                            source_at <= quoted_at+300 and
-                            0 < quoted_at-stamp < SHADOW_RETENTION_SECONDS):
+                            0 < source_at <= quoted_at+300 and
+                            abs(quoted_at-int(stamp)) <= 2):
                         archived = {
                             "hypothetical_copy_ask": ask,
                             "hypothetical_copy_stake_usd": stake,
