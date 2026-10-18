@@ -110,6 +110,16 @@ These are small, unequal, observational **market-condition** samples collected a
 
 Capacity check at this run: the 900-entry ring spans ~8.9h, corresponding to about **101 sampled new quote keys/hour** *if* the ring represents a roughly stable arrival process; the archive configuration allows at most **150 classification attempts/hour**. These are proxies, not guarantees: some checks revisit unresolved matches; jobs can fail/skip and the backlog can continue growing. The checkpoint records actual new keys, backlog delta, the approximate number of runs needed to revisit the unresolved sample, coverage/eviction flags and original-quote availability. **Never silently assert complete false-negative/ROI coverage.**
 
+## Entry-odds/time support and maturity checks (new gate)
+
+The comparison model has now gained **price/time support** and **settlement maturity** diagnostics. The one-to-one support check considers separate market conditions only if two saved contemporaneous quotes are within **$0.05 in entry ask** and **6 hours in quote time**, and never reuses one blocked market for multiple sent signals. This is *not* a same-league, same-game, same-price-depth, randomized, or matched causal comparison, and the code **always reports the filter's causal ROI effect as null**. Confirmed market-condition duplicates are excluded from the ROI denominator rather than selected opportunistically. The new `market_condition_collision_inventory` separately reports duplicate conditions within each cohort and crossing sent/blocked groups.
+
+An additional `original_quote_outcome_maturity_by_time_odds` groups saved quote conditions into UTC-day × 10-cent ask bins with final-win, final-loss, and unverified/unresolved counts. This makes uneven settlement coverage visible. It is **only the surviving saved quote journal**: old evicted prices, independent sports-event identity, and actual fills are still unknown.
+
+[Observed early replay](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39110040677) showed **0 one-to-one quoted-price/time pairs** meeting the 5-cent/6-hour support rule. A strict market-condition uniqueness test left only 1 sent versus 27 blocked market observations in that particular replay, not the 3-vs-22 observations from an earlier checkpoint. The count changed as new rejected quotes and duplicate conditions were collected; this proves why a single ROI ratio from the older, different cohort snapshot is not a safe guide to loosening risk filters. The archive has an explicit flag for collision exclusions and for selection/settlement censoring. The unpaired dataset may still support descriptive modeling but **NOT proof that filtering improved or hurt copy-trading profit**.
+
+The audit branch's offline suite includes regression tests for one-to-one support, collision attribution, unknown-outcome maturity and missing original quote proof. Production Telegram decision rules remain unchanged; any live filtering change still needs a sports-event/outcome-matched prospective experiment.
+
 ## Still unresolved / next gate
 
 - The old universe shortlist still uses up to 100 **legacy closed positions** to rank and admit 300 wallets. It is not a complete economic or predictive ranking. Keep this behavior unchanged in production pending a real, event-level and cash-flow-reconciled replacement.
