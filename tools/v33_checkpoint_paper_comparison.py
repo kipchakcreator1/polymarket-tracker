@@ -309,6 +309,26 @@ def build_report(checkpoint, forward):
     for x in considered:
         groups[x["market"]].append(x)
     duplicated=sum(len(r) for r in groups.values() if len(r)>1)
+    collisions={
+        "conditions_crossing_rejected_and_sent":sum(
+            len({x["cohort"] for x in observations})>1
+            for observations in groups.values()),
+        "quote_rows_in_cross_cohort_conditions":sum(
+            len(observations) for observations in groups.values()
+            if len({x["cohort"] for x in observations})>1),
+        "conditions_repeated_only_in_rejected_group":sum(
+            len(observations)>1 and
+            {x["cohort"] for x in observations}=={"blocked_recent"}
+            for observations in groups.values()),
+        "conditions_repeated_only_in_sent_group":sum(
+            len(observations)>1 and
+            {x["cohort"] for x in observations}=={"telegram_sent"}
+            for observations in groups.values()),
+        "collision_conditions_total":sum(
+            len(observations)>1 for observations in groups.values()),
+        "quote_rows_in_collision_conditions":duplicated,
+        "none_of_the_colliding_observations_contribute_to_cohort_roi":True,
+    }
     unique=[v[0] for v in groups.values() if len(v)==1]
     by={cohort:group_summary([x for x in unique if x["cohort"]==cohort])
         for cohort in ("blocked_recent","telegram_sent")}
@@ -323,6 +343,7 @@ def build_report(checkpoint, forward):
         "forward_paper_rows":len(forward.get("positions") or []),
         "confirmed_quote_candidate_rows":len(considered),
         "market_condition_duplicates_excluded":duplicated,
+        "market_condition_collision_inventory":collisions,
         "exclusion_reasons":dict(rejected),
         "by_cohort":by,
         "quote_price_time_support":overlap,
