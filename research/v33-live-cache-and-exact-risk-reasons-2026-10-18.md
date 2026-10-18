@@ -16,6 +16,14 @@ Recent live evidence for the current reconstructed 42 extra wallets had **10 boo
 
 The [full isolated audit #39124396806](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39124396806) passed **245/245 offline regressions**, including evidence that a genuine major-loss veto, an unavailable history, and an active portfolio veto are distinguishable, while a successful send has a cleared risk reason.
 
+## Update: first prospective reason-labeled production record confirmed
+
+[Successful aggregate audit #39124547220](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39124547220), **246/246 offline tests** (including shortlist-drift regression), read a checkpoint only ~39 seconds old. The **runtime wallet membership matched the reconstructed 346 exactly**, not the earlier transient mismatch. The live `last_run` and saved maps now contain **77 recent risk checks, 3 active portfolio checks, 160 sports market-focus entries, 39 politics entries**, **zero request errors and zero poll gaps**.
+
+More importantly, production-shared `shadow_evidence` now has **non-legacy `risk_reason` labels**, independently confirming that PR #6 has been picked up by a fresh live process. The 1h cohort snapshot counted **137** old-group quotes and **11** extra-group quotes. Of the 11 extra quotes, **one** explicitly recorded `major_unredeemed_loss_cluster_90d` and **ten** were historical generic labels with unknown exact veto reasons. Of the 137 original-group quotes, **three** had new confirmed major-loss reasons, **one** had `recent_unredeemed_loss_cluster`, and **133** lacked exact legacy reasons. This does **not** show that the unknown entries were safe or profitable, or that all observations correspond to independent sports matches. At the snapshot, source-time cohort reconstruction matched the entire runtime monitor, avoiding stale-membership misattribution.
+
+**Required next observation:** count exact new refusal reasons over longer, prospectively settled market cohorts and separate `recent_history_unverified` from actual bad wallet economics. Only compare execution-price model outcomes for independently verified, resolved sports events; no reason from this early sample justifies relaxing risk gates.
+
 ## Next acceptance gate
 
 Observe after next bot session refresh: `last_run.cached_risk_wallets` and `last_run.cached_sports_market_meta` should remain nonzero without errors, `shadow_evidence` must contain prospective `risk_reason` keys, and only then compare counts/settled outcomes of specific reasons for sport BUYs from added versus old wallets. The existing `v33_live_pilot_health.py` aggregates reasons by 1h/6h/24h and exposes unavoidable legacy unknown counts. None of these observations yet proves that a different recent-form threshold would have yielded positive real copy ROI.
