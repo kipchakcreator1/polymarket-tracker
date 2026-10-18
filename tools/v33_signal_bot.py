@@ -95,7 +95,7 @@ MAX_FAST_TRADE_AGE = 75
 FAST_MARKET_END_BUFFER = 90
 RECENT_CACHE_SECONDS = 180
 RECENT_RISK_VETO_CACHE_SECONDS = 900
-RECENT_API_ERROR_COOLDOWN_SECONDS = 600  # no repeated costly failed pagination
+RECENT_API_ERROR_COOLDOWN_SECONDS = int(os.getenv("V33_RECENT_API_ERROR_COOLDOWN_SECONDS", "120"))  # no repeated costly failed pagination
 # Four pages are sufficient only for wallets with <=1,000 settled losses.
 # Once a disqualifying number of losses is independently observed, fail
 # closed immediately instead of fetching pages that cannot change the veto.
@@ -1187,6 +1187,11 @@ def deliver(state, selected, now, *, clock=None):
             mark(state, "recent_form_request_error")
             print("V33 RECENT FORM WARNING:", type(exc).__name__, str(exc)[:100])
             continue  # retry while trade is fresh; never send unchecked
+        if recent_reason == "recent_history_unverified":
+            # API uncertainty is not a confirmed wallet loss. Keep the
+            # candidate for another attempt while the trade stays fresh.
+            mark(state, recent_reason)
+            continue
         if recent_reason:
             if topic == "sports":
                 observed = state["shadow_evidence"][dedupe]
