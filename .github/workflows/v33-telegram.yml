@@ -211,6 +211,22 @@ jobs:
           print("- These are NOT filled orders or the user's realized returns.")
           print("- The historic BUY total predates per-topic classification.")
           print("- Latest rejection counts:", last.get("this_poll", {}))
+          print("- TOP 12 REJECTION REASONS (latest poll):")
+          for reason, count in sorted((last.get("this_poll") or {}).items(),
+                                      key=lambda item: (-int(item[1]), item[0]))[:12]:
+              print(f"  - {reason}: {count}")
+          print("- DELIVERY FUNNEL (cumulative; counters may predate current run):")
+          for topic in ("sports", "btc"):
+              print(f"  - {topic}: source={counts.get('eligible_source_buy_'+topic, 0)}, "
+                    f"book={counts.get('book_verified_'+topic, 0)}, "
+                    f"recent={counts.get('recent_verified_'+topic, 0)}, "
+                    f"portfolio={counts.get('portfolio_verified_'+topic, 0)}, "
+                    f"telegram={counts.get('alerts_'+topic, 0)}")
+          print("- API errors: trade_poll=", last.get("request_errors", 0),
+                "active_form_total=", counts.get("active_form_request_error", 0),
+                "recent_form_total=", counts.get("recent_form_request_error", 0),
+                "market_focus_total=", counts.get("market_focus_request_error", 0))
+          print("- Poll gaps:", last.get("poll_gaps", 0))
           print("- Telegram server acceptance is not proof of phone notification.")
           PY
           if (( errors >= 3 && errors * 5 >= pass )); then
