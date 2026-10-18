@@ -318,8 +318,6 @@ def fetch_recent_results(wallet, now):
                 token = str(item.get("token_id") or "")
                 if not v32.discovery.CONDITION_RE.fullmatch(condition) or not token:
                     raise ValueError("Position lacks condition or outcome identity")
-                timestamp = position_activity_timestamp(
-                    item.get("last_event_at"), now)
                 if status == "CLOSED":
                     if item.get("status") != "CLOSED":
                         raise ValueError("Expected closed position")
@@ -334,17 +332,29 @@ def fetch_recent_results(wallet, now):
                         continue  # the API can return unrelated redeemables
                 if not math.isfinite(pnl):
                     raise ValueError("Missing/nonfinite recent position PnL")
+                raw_timestamp = item.get("last_event_at")
+                # v2 can return 0 for an archived settled loser. Keep that
+                # economic loss, but NEVER invent a settlement/activity date
+                # or mark the 24h/90d risk window complete.
+                if (status == "REDEEMABLE_LOST" and
+                        raw_timestamp in (None, 0, "0")):
+                    timestamp = None
+                else:
+                    timestamp = position_activity_timestamp(raw_timestamp, now)
                 data.append({
-                    "realizedPnl": pnl, "timestamp": int(timestamp),
+                    "realizedPnl": pnl, "timestamp": timestamp,
                     "condition_id": condition, "token_id": token,
                     "_unredeemed_lost": status == "REDEEMABLE_LOST",
+                    "_timestamp_unknown": timestamp is None,
                 })
                 if status == "REDEEMABLE_LOST":
                     key = (condition, token)
-                    if (pnl <= -RECENT_MIN_MATERIAL_LOSS_USD and
+                    if (timestamp is not None and
+                            pnl <= -RECENT_MIN_MATERIAL_LOSS_USD and
                             0 <= now - timestamp <= RECENT_LOST_LOOKBACK_SECONDS):
                         material_24h.add(key)
-                    if (pnl <= -MAJOR_LOSS_MIN_USD and
+                    if (timestamp is not None and
+                            pnl <= -MAJOR_LOSS_MIN_USD and
                             0 <= now - timestamp <= MAJOR_LOSS_LOOKBACK_SECONDS):
                         major_90d.add(key)
             # Once >threshold unique confirmed losses are observed, no
@@ -379,7 +389,7 @@ def fetch_recent_results(wallet, now):
         old = deduped.get(key)
         if old is None or item["realizedPnl"] < old["realizedPnl"]:
             deduped[key] = item
-    return sorted(deduped.values(), key=lambda row: -row["timestamp"])
+    return sorted(deduped.values(), key=lambda row: -(row["timestamp"] or 0))
 
 
 def recent_form(rows, now=None):
@@ -391,7 +401,7 @@ def recent_form(rows, now=None):
     """
     if not isinstance(rows, list):
         raise ValueError("Recent closed positions API returned non-list")
-    subset = rows[:RECENT_CLOSED_WINDOW]
+    subset = [x for x in rows if not x.get("_timestamp_unknown")][:RECENT_CLOSED_WINDOW]
     if any(not isinstance(x, dict) for x in subset):
         raise ValueError("Recent closed positions contain malformed entries")
     if any(x.get("realizedPnl") is None for x in subset):
@@ -419,7 +429,12 @@ def recent_form(rows, now=None):
         for x in rows
     ) if now is not None else 0
     last_five = pnls[:5]
+    undated_losses = sum(
+        bool(x.get("_timestamp_unknown")) and
+        bool(x.get("_unredeemed_lost")) and
+        v2.asfloat(x.get("realizedPnl")) < -.01 for x in rows)
     return {"closed": len(pnls),
+            "undated_loss_positions": undated_losses,
             "positive_rate": sum(p > 0 for p in pnls) / len(pnls) if pnls else 0.,
             "loss_streak": streak, "net_pnl": gains - losses,
             "last5_wins": sum(p > 0 for p in last_five),
@@ -437,6 +452,10 @@ def recent_form_reason(state, wallet, now):
             0 <= now-int(value.get("checked_at") or 0) <=
             RECENT_RISK_VETO_CACHE_SECONDS):
         return value["confirmed_risk_veto"]
+    if (isinstance(value, dict) and value.get("undated_loss_positions") and
+            0 <= now-int(value.get("checked_at") or 0) <=
+            RECENT_API_ERROR_COOLDOWN_SECONDS):
+        return "recent_undated_loss_history"
     if (isinstance(value, dict) and value.get("history_unverified") and
             now < int(value.get("retry_after") or
                       (int(value.get("checked_at") or 0) +
@@ -475,6 +494,10 @@ def recent_form_reason(state, wallet, now):
         value = recent_form(rows, now)
         value["checked_at"] = now
         cache[wallet] = value
+    if value.get("undated_loss_positions"):
+        # Missing activity date is a data-quality UNKNOWN, not a safe wallet
+        # and not evidence of a recent losing streak.
+        return "recent_undated_loss_history"
     if value["unredeemed_lost_24h"] > RECENT_MAX_UNREDEEMED_LOSSES_24H:
         return "recent_unredeemed_loss_cluster"
     if value["major_unredeemed_lost_90d"] > MAJOR_LOSS_MAX_90D:
