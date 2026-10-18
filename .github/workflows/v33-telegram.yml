@@ -197,7 +197,7 @@ jobs:
           print("- Forward quote timestamps may be a few seconds after poll start; now retained.")
           print("- New quote records include $5 VWAP, orderbook shares and timing.")
           print("- Book-depth and final payout evidence feed read-only fee-model reports.")
-          print("- BOOK-VERIFIED SPORTS SHADOW quotes (NOT sent, NOT filled):"
+          print("- BOOK-VERIFIED SPORTS SHADOW quotes (NOT sent, NOT filled):",
                 len(data.get("shadow_evidence") or {}))
           print("- OPEN-position (NOT BUY) Telegram accepts:",
                 counts.get("open_alerts_sent", 0))
