@@ -278,6 +278,8 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
             if since <= timestamp <= check_now+300:
                 merged.setdefault("|".join(key_parts), timestamp)
         if len(merged) > SHADOW_MAX_RETAINED:
+            print("V33 SHADOW HISTORY CAP:", len(merged)-SHADOW_MAX_RETAINED,
+                  "oldest quote keys evicted before settlement audit")
             merged = dict(sorted(merged.items(), key=lambda item: -item[1])
                           [:SHADOW_MAX_RETAINED])
         def shadow_priority(pair):
@@ -340,6 +342,10 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
         paper = signal_evidence.get(key)
         row = dict(row)
         if historical_shadow:
+            # Recompute paper results from authenticated original quote, never
+            # inherit an opaque PnL from earlier legacy report rows.
+            row.pop("paper_hold_pnl_no_fees", None)
+            row.pop("paper_stake_usd", None)
             archived = row.get("original_book_quote")
             if not isinstance(archived, dict):
                 archived = None
@@ -896,6 +902,20 @@ def main():
             print("TRUE SPORTS ERROR:", wallet[:12], type(exc).__name__, str(exc)[:90])
             # Failed refreshes never erase earlier results or forge wins.
     report = {"schema": "v33_true_sports_audit_1", "updated_at": now,
+              "shadow_backlog_health": {
+                  "live_quote_ring_keys": len(shadow),
+                  "retained_resolved_and_unresolved_rows": len(shadow_rows),
+                  "not_yet_checked": sum(x.get("result") == "not_checked"
+                                         for x in shadow_rows),
+                  "archive_quote_recorded": sum(
+                      isinstance(x.get("original_book_quote"), dict)
+                      for x in shadow_rows),
+                  "shadow_api_checks_per_run_cap": 25,
+                  "rolling_retention_seconds": SHADOW_RETENTION_SECONDS,
+                  "retention_capacity_rows": SHADOW_MAX_RETAINED,
+                  "original_quote_missing_cannot_reconstruct_fills": True,
+                  "active_monitor_not_modified": True,
+              },
               "method": "v2 trades + exact Gamma token mapping + final v2 payouts; "
                         "directional results; forward $5 paper HOLD only "
                         "when actual alert-time simulated ask was stored",
