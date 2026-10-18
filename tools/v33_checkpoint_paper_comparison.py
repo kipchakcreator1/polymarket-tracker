@@ -6,6 +6,7 @@ an estimate of real copy ROI. The two cohorts can differ by league/time.
 Never replace a missing entry quote with historical market prices.
 """
 import collections
+import datetime
 import json
 import math
 import os
@@ -255,8 +256,8 @@ def observable_quote_outcome_maturity(checkpoint, forward):
                                                  "final_win":0,"final_loss":0,
                                                  "not_final_or_unverified":0})
         for price,stamp,result in unique.values():
-            day=__import__("datetime").datetime.datetime.fromtimestamp(
-                stamp,__import__("datetime").timezone.utc).strftime("%Y-%m-%d")
+            day=datetime.datetime.fromtimestamp(
+                stamp,datetime.timezone.utc).strftime("%Y-%m-%d")
             price_bin=min(9,int(price*10))
             key=f"{day}|ask_{price_bin*10:02d}-{(price_bin+1)*10:02d}c"
             s=buckets[key]
