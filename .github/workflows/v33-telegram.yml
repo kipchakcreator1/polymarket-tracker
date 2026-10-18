@@ -231,6 +231,8 @@ jobs:
           print("- RECENT HISTORY FAILURE BREAKDOWN (cumulative; new counters):")
           for reason in ("recent_history_page_cap",
                          "recent_history_pagination_invalid",
+                         "recent_history_data_invalid",
+                         "recent_history_transport_error",
                          "recent_history_api_or_data_error"):
               print(f"  - {reason}: {counts.get(reason, 0)}")
           print("- Poll gaps:", last.get("poll_gaps", 0))
