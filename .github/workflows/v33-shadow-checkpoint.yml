@@ -1,0 +1,92 @@
+name: v3.3 Durable Shadow Research Checkpoint (NO ORDERS)
+# Entirely separate from the live Telegram workflow and trading bot.
+# On this research branch, commits to code/workflow trigger a safe canary;
+# the checkpoint data commit does not cause a second push run.
+on:
+  push:
+    branches: [audit/v33-risk-gate-20261017]
+    paths:
+      - 'tools/v33_shadow_checkpoint.py'
+      - 'tests/test_v33_shadow_checkpoint.py'
+      - '.github/workflows/v33-shadow-checkpoint.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: v33-shadow-checkpoint-archive
+  cancel-in-progress: false
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout isolated audit branch for archival
+        uses: actions/checkout@v4
+        with:
+          ref: audit/v33-risk-gate-20261017
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test durable checkpoint offline (no external requests)
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_shadow_checkpoint.py tests/test_v33_shadow_checkpoint.py
+          python -m unittest discover -s tests -p 'test_v33_shadow_checkpoint.py' -v
+          python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
+      - name: Checkout fresh live research snapshots READ ONLY
+        uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+          path: v33-snapshot
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify scope and capture bounded public API outcomes
+        env:
+          PYTHONPATH: .
+          V33_CHECKPOINT_SOURCE_DIR: v33-snapshot
+          V33_SHADOW_MAX_API_CHECKS: '25'
+        run: |
+          python -u tools/v33_shadow_checkpoint.py
+          python - <<'PY'
+          import json, pathlib
+          j = json.loads(pathlib.Path("research/v33-shadow-outcome-checkpoint.json").read_text())
+          summary = j["meta"]
+          p = pathlib.Path("artifacts/v33-shadow-checkpoint-health.json")
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+          with open(__import__("os").environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("## Read-only shadow outcome checkpoint\n")
+              for key in ("completed_runs","archived_rows","archived_quotes_at_original_observation",
+                          "not_yet_terminal","newly_final_classified_this_run",
+                          "newly_final_wins","newly_final_losses",
+                          "minimum_runs_to_recheck_current_backlog",
+                          "risk_of_unobserved_ring_evictions",
+                          "coverage_breach_or_unknown"):
+                  out.write(f"- {key}: {summary.get(key)}\n")
+              out.write("- No Telegram, no real orders, no live-branch writes.\n")
+          PY
+      - name: Persist checkpoint exclusively on audit branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- research/v33-shadow-outcome-checkpoint.json
+          if git diff --cached --quiet; then
+            echo "No updated checkpoint to persist"
+          else
+            git commit -m "research: persist shadow outcome checkpoint [skip ci]"
+            git fetch origin audit/v33-risk-gate-20261017
+            git rebase origin/audit/v33-risk-gate-20261017
+            git push origin HEAD:refs/heads/audit/v33-risk-gate-20261017
+          fi
+      - name: Publish aggregate health artifact, not private keys
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v33-shadow-archive-health
+          path: artifacts/v33-shadow-checkpoint-health.json
+          if-no-files-found: ignore
+          retention-days: 14
