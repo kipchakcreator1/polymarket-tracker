@@ -107,6 +107,48 @@ class CohortComparisonTests(unittest.TestCase):
         got=m.build_report(checkpoint([row]),forward([]))
         self.assertEqual(got["exclusion_reasons"]["blocked_not_verifiably_before_settlement"],1)
 
+    def test_one_to_one_support_uses_price_and_time_not_any_lookalike(self):
+        rows = [
+            {"cohort":"telegram_sent", "market":C, "ask":.52, "stake":5,
+             "quoted_at":1000, "result":"win", "source_trade_to_quote_seconds":None},
+            {"cohort":"blocked_recent", "market":D, "ask":.54, "stake":5,
+             "quoted_at":1100, "result":"loss", "source_trade_to_quote_seconds":20},
+            {"cohort":"blocked_recent", "market":"0x"+"e"*64, "ask":.97, "stake":5,
+             "quoted_at":1100, "result":"win", "source_trade_to_quote_seconds":20},
+            {"cohort":"blocked_recent", "market":"0x"+"f"*64, "ask":.50, "stake":5,
+             "quoted_at":100000, "result":"win", "source_trade_to_quote_seconds":20},
+        ]
+        support=m.quote_price_time_support(rows)
+        self.assertEqual(support["one_to_one_pairs"],1)
+        self.assertEqual(support["sent_unpaired"],0)
+        self.assertEqual(support["blocked_unpaired"],2)
+        self.assertEqual(support["max_pairing_quote_time_gap_seconds"],100)
+        self.assertAlmostEqual(support["max_pairing_ask_gap"],.02)
+        self.assertIsNone(support["conditional_odds_time_difference_in_roi"])
+        self.assertIsNone(support["causal_filter_effect"])
+        self.assertFalse(support["same_league_verified"])
+
+    def test_one_rejected_condition_cannot_pair_with_two_sent_conditions(self):
+        rows=[
+            {"cohort":"telegram_sent", "market":C, "ask":.52, "stake":5,
+             "quoted_at":1000, "result":"win", "source_trade_to_quote_seconds":None},
+            {"cohort":"telegram_sent", "market":"0x"+"e"*64, "ask":.53,
+             "stake":5, "quoted_at":1000, "result":"loss",
+             "source_trade_to_quote_seconds":None},
+            {"cohort":"blocked_recent", "market":D, "ask":.52, "stake":5,
+             "quoted_at":990, "result":"win", "source_trade_to_quote_seconds":15},
+        ]
+        overlap=m.quote_price_time_support(rows)
+        self.assertEqual(overlap["one_to_one_pairs"],1)
+        self.assertEqual(overlap["sent_unpaired"],1)
+
+    def test_price_time_support_empty_remains_unknown_not_zero_causal_effect(self):
+        overlap=m.quote_price_time_support([])
+        self.assertEqual(overlap["one_to_one_pairs"],0)
+        self.assertIsNone(overlap["max_pairing_ask_gap"])
+        self.assertIsNone(overlap["causal_filter_effect"])
+        self.assertFalse(overlap["eligible_for_changing_live_gates"])
+
 
 if __name__ == "__main__":
     unittest.main()
