@@ -258,7 +258,7 @@ class BotTests(unittest.TestCase):
             self.assertEqual(bot.recent_form_reason(state,W,NOW+121),
                              "recent_history_unverified")
         self.assertEqual(req.call_count,2)
-        self.assertEqual(state["counters"]["recent_form_request_error"],1)
+        self.assertEqual(state["counters"]["recent_form_request_error"],2)
         self.assertEqual(state["recent_form_cache"][W]["history_unverified"],True)
 
     def test_recent_seven_losses_stop_alert_even_with_high_old_winrate(self):
