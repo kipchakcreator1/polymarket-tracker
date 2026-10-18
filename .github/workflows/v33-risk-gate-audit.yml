@@ -53,6 +53,12 @@ jobs:
           python -m unittest discover -s tests -p 'test_v33_research_shadow_queue.py' -v
           echo "Snapshot SHA: $(git -C v33-snapshot rev-parse HEAD)"
           python tools/v33_research_shadow_queue.py
+      - name: Test durable rejected quote archival and old-first resolution audit
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_result_audit.py tests/test_v33_result_audit.py
+          python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
       - name: Independently validate quoted-price sports copyability and filter evidence
         env:
           PYTHONPATH: .
