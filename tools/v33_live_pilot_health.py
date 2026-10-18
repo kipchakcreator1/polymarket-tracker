@@ -57,7 +57,22 @@ def count_evidence(evidence, cohort, now, timestamp_field):
             t=positive_epoch(item.get(timestamp_field),now)
             if wallet in cohort and t is not None and now-t <= window:
                 entries.append((key,item))
+        blocked=[item for _,item in entries
+                 if item.get("decision") in ("blocked_recent",
+                                           "blocked_active",
+                                           "awaiting_recent_history")]
+        # Older quotes did not store individual reasons. Never label these
+        # as confirmed loss-history blocks without an explicit source code.
+        reasons=collections.Counter(
+            str(item.get("risk_reason") or "unrecorded_legacy_reason")
+            for item in blocked)
+        categories=collections.Counter(
+            str(item.get("risk_gate") or "unknown_legacy_gate")
+            for item in blocked)
         result[f"{window//3600}h"]={
+            "recorded_risk_gate_reasons":dict(reasons),
+            "recorded_risk_gate_categories":dict(categories),
+            "unverified_legacy_reason_observations":reasons["unrecorded_legacy_reason"],
             "quoted_observations":len(entries),
             "unique_wallets":len({key.split("|")[0].lower() for key,_ in entries}),
             "unique_market_conditions":len({
