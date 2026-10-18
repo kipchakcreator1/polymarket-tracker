@@ -243,7 +243,7 @@ class BotTests(unittest.TestCase):
         sender.assert_not_called()
         self.assertEqual(state["counters"]["recent_form_request_error"], 1)
         self.assertEqual(state["counters"]["recent_history_unverified"], 1)
-        self.assertEqual(len(state["pending"]), 0)  # never alert on unknown risk
+        self.assertEqual(len(state["pending"]), 1)  # retry only while fresh; never send unchecked
 
     def test_repeated_incomplete_history_is_cached_and_cannot_send(self):
         state=bot.blank_state()
@@ -253,9 +253,11 @@ class BotTests(unittest.TestCase):
                              "recent_history_unverified")
             self.assertEqual(bot.recent_form_reason(state,W,NOW+45),
                              "recent_history_unverified")
-            self.assertEqual(bot.recent_form_reason(state,W,NOW+599),
+            self.assertEqual(bot.recent_form_reason(state,W,NOW+119),
                              "recent_history_unverified")
-        self.assertEqual(req.call_count,1)
+            self.assertEqual(bot.recent_form_reason(state,W,NOW+121),
+                             "recent_history_unverified")
+        self.assertEqual(req.call_count,2)
         self.assertEqual(state["counters"]["recent_form_request_error"],1)
         self.assertEqual(state["recent_form_cache"][W]["history_unverified"],True)
 
