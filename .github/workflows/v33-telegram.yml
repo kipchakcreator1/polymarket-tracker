@@ -228,6 +228,11 @@ jobs:
                 "active_form_total=", counts.get("active_form_request_error", 0),
                 "recent_form_total=", counts.get("recent_form_request_error", 0),
                 "market_focus_total=", counts.get("market_focus_request_error", 0))
+          print("- RECENT HISTORY FAILURE BREAKDOWN (cumulative; new counters):")
+          for reason in ("recent_history_page_cap",
+                         "recent_history_pagination_invalid",
+                         "recent_history_api_or_data_error"):
+              print(f"  - {reason}: {counts.get(reason, 0)}")
           print("- Poll gaps:", last.get("poll_gaps", 0))
           print("- Telegram server acceptance is not proof of phone notification.")
           PY
