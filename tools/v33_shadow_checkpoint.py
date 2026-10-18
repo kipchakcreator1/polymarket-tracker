@@ -162,7 +162,7 @@ def capture_original_risk_verdict(row, live_quote, now):
         if reason is not None:
             return False
     elif (not isinstance(reason, str) or not 1 <= len(reason) <= 128
-          or any(x in reason for x in ("\\n", "\\r", "|"))):
+          or any(x in reason for x in ("\n", "\r", "|"))):
         return False
     current = row.get("shadow_decision")
     if current not in (None, "", decision, *INTERIM_DECISIONS):
