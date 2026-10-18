@@ -1,0 +1,27 @@
+name: v3.3 Risk Gate Audit - Offline Only
+on:
+  push:
+    branches:
+      - audit/v33-risk-gate-20261017
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile audit code
+        run: python -m py_compile tools/v33_signal_bot.py tools/v33_open_positions.py tests/test_v33_signal_bot.py tests/test_v33_open_positions.py
+      - name: Run v3.3 signal regressions with no credentials or network calls
+        env:
+          PYTHONPATH: .
+        run: python -m unittest discover -s tests -p 'test_v33_signal_bot.py' -v
+      - name: Run v3.3 OPEN position regressions
+        env:
+          PYTHONPATH: .
+        run: python -m unittest discover -s tests -p 'test_v33_open_positions.py' -v
