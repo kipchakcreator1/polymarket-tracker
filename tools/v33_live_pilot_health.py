@@ -142,8 +142,8 @@ def build(source,state,now=None,selector=None):
         "by_reconstructed_cohort":by_group,
         "notification_delivery_not_verified":True,
         "source_market_pnl_and_outcome_not_verified":True,
-        "risk_checks_preserved":True,
-        "new_50_were_never_automatically_approved":True,
+        "risk_configuration_verified_by_this_read_only_report":False,
+        "no_risk_gate_or_live_watchlist_modified_by_this_report":True,
         "no_fills_or_alerts_in_group_is_not_evidence_the_group_is_unprofitable":True,
         "no_api_requests_or_production_writes":True,
         "warnings":[
