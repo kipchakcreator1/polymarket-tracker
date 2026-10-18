@@ -285,16 +285,21 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
             pieces = key.split("|")
             old = saved.get(tuple(pieces)) if len(pieces) == 3 else None
             if not isinstance(old, dict):
-                return (0, 0, stamp)
+                return (2, 0, stamp)
             result = str(old.get("result") or "")
             if result in ("win", "loss", "push_or_partial",
                           "not_verified_sport"):
-                return (3, 0, stamp)
+                return (4, 0, stamp)
             last = int(old.get("checked_at") or 0)
-            # Prefer never-checked records and older pending refreshes; recent
-            # 1-hour UNKNOWN results do not consume an API request.
-            if result.startswith("unknown") and check_now-last < 3600:
-                return (2, last, stamp)
+            # First drain previously queued (not_checked/api_error) records,
+            # then revisit older UNKNOWNs, then assess fresh arrivals. Otherwise
+            # a live firehose can starve old games forever.
+            if result in ("not_checked", "api_error", ""):
+                return (0, last, stamp)
+            if result.startswith("unknown") and check_now-last >= 3600:
+                return (1, last, stamp)
+            if result.startswith("unknown"):
+                return (3, last, stamp)
             return (1, last, stamp)
         ordered = sorted(merged.items(), key=shadow_priority)
     else:
