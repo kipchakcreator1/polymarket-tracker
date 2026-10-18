@@ -838,6 +838,56 @@ class BotTests(unittest.TestCase):
         self.assertEqual(state["recent_form_cache"][W]["confirmed_risk_veto"],
                          "major_unredeemed_loss_cluster_90d")
 
+    def test_zero_activity_date_keeps_settled_loser_but_does_not_certify_recent(self):
+        winners = [
+            {"proxy_wallet": W, "condition_id": COND, "token_id": str(100+i),
+             "last_event_at": NOW-i, "status": "CLOSED", "realized_pnl": 8}
+            for i in range(20)]
+        undated = {
+            "proxy_wallet": W, "condition_id": COND, "token_id": "zero-loss",
+            "last_event_at": 0, "status": "REDEEMABLE", "redeemable": True,
+            "realized_pnl": 0, "unrealized_pnl": -35}
+        replies = [
+            {"data": winners, "pagination": {"has_more": False}},
+            {"data": [undated], "pagination": {"has_more": False}},
+        ]
+        with mock.patch.object(bot.v2, "request_json", side_effect=replies):
+            rows = bot.fetch_recent_results(W, NOW)
+        self.assertEqual(len(rows), 21)
+        self.assertIsNone(rows[-1]["timestamp"])
+        self.assertTrue(rows[-1]["_timestamp_unknown"])
+        form = bot.recent_form(rows, NOW)
+        self.assertEqual(form["undated_loss_positions"], 1)
+        self.assertEqual(form["closed"], 20)
+        self.assertEqual(form["unredeemed_lost_24h"], 0)
+        self.assertEqual(form["major_unredeemed_lost_90d"], 0)
+
+    def test_undated_loser_blocks_live_qualification_without_api_error(self):
+        good = [{"realizedPnl": 10, "timestamp": NOW-i}
+                for i in range(20)]
+        undated = {"realizedPnl": -40, "timestamp": None,
+                   "_unredeemed_lost": True, "_timestamp_unknown": True}
+        state = bot.blank_state()
+        with mock.patch.object(bot, "fetch_recent_results",
+                               return_value=good + [undated]) as fetch:
+            self.assertEqual(bot.recent_form_reason(state, W, NOW),
+                             "recent_undated_loss_history")
+            self.assertEqual(bot.recent_form_reason(state, W, NOW+180),
+                             "recent_undated_loss_history")
+        fetch.assert_called_once()
+        self.assertEqual(state["counters"].get("recent_form_request_error", 0), 0)
+        self.assertEqual(state["recent_form_cache"][W]["undated_loss_positions"], 1)
+
+    def test_closed_position_with_zero_activity_date_is_not_silently_accepted(self):
+        broken = {"proxy_wallet": W, "condition_id": COND,
+                  "token_id": "closed-zero", "last_event_at": 0,
+                  "status": "CLOSED", "realized_pnl": 10}
+        with mock.patch.object(bot.v2, "request_json",
+                               return_value={"data": [broken],
+                                             "pagination": {"has_more": False}}):
+            with self.assertRaisesRegex(ValueError, "timestamp invalid"):
+                bot.fetch_recent_results(W, NOW)
+
     def test_valid_timestamp_milliseconds_and_delayed_poll_second_clock(self):
         at=1792223000  # actual epoch seconds, not the synthetic 1970-era NOW
         with mock.patch.object(bot.time,"time",return_value=at+140):
