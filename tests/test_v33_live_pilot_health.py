@@ -61,6 +61,35 @@ class LivePilotHealthTests(unittest.TestCase):
                          ["major_unredeemed_loss_cluster_90d"],1)
         self.assertTrue(r["no_api_requests_or_production_writes"])
 
+    def test_exact_recent_risk_reason_not_conflated_with_missing_history(self):
+        source,state=fixture()
+        new=C+"|cond1|token"
+        state["shadow_evidence"][new]["risk_reason"] = "major_unredeemed_loss_cluster_90d"
+        state["shadow_evidence"][new]["risk_gate"] = "recent"
+        old=B+"|cond3|token"
+        state["shadow_evidence"][old]["risk_reason"] = "recent_history_unverified"
+        state["shadow_evidence"][old]["risk_gate"] = "recent"
+        report=h.build(source,state,NOW,selector)
+        latest=report["by_reconstructed_cohort"]["additional_up_to_50"][
+            "prospective_book_quote_decisions"]["1h"]
+        baseline=report["by_reconstructed_cohort"]["old_300_reconstructed"][
+            "prospective_book_quote_decisions"]["1h"]
+        self.assertEqual(latest["recorded_risk_gate_reasons"][
+            "major_unredeemed_loss_cluster_90d"],1)
+        self.assertEqual(latest["recorded_risk_gate_categories"]["recent"],1)
+        self.assertEqual(baseline["recorded_risk_gate_reasons"][
+            "recent_history_unverified"],1)
+        self.assertEqual(report["new_research_group_present_in_saved_runtime"],2)
+
+    def test_legacy_book_quote_reason_is_unknown_not_assumed_loss(self):
+        source,state=fixture()
+        report=h.build(source,state,NOW,selector)
+        newest=report["by_reconstructed_cohort"]["additional_up_to_50"][
+            "prospective_book_quote_decisions"]["1h"]
+        self.assertEqual(newest["unverified_legacy_reason_observations"],1)
+        self.assertEqual(newest["recorded_risk_gate_reasons"][
+            "unrecorded_legacy_reason"],1)
+
     def test_missing_live_cursors_not_falsely_called_pilot_active(self):
         source,state=fixture()
         state["cursors"].pop(C)
