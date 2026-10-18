@@ -101,10 +101,11 @@ jobs:
           # Require 6+ material unredeemed losers before this veto.
           V33_MIN_RECENT_LOSS_USD: '5'
           V33_MAX_UNREDEEMED_LOSSES_24H: '5'
-          # Additional safety stop: >=4 severe settled losses in last 90d
-          # of observed position activity, incl. archived unredeemed losses.
+          # Global 90d severe-loss veto disabled (-1); keep telemetry only.
           V33_MAJOR_UNREDEEMED_LOSS_USD: '100'
-          V33_MAX_MAJOR_LOSSES_90D: '3'
+          V33_MAX_MAJOR_LOSSES_90D: '-1'
+          # Allow ordinary losing streaks; keep ROI and portfolio checks.
+          V33_MAX_RECENT_LOSS_STREAK: '3'
           # Never notify on political markets (Gamma event tags + title guard).
           V33_EXCLUDE_POLITICS: '1'
           V33_MAX_PRICE_RISE: '0.05'
