@@ -477,6 +477,14 @@ def recent_form_reason(state, wallet, now):
             cache[wallet] = {"checked_at": now, "history_unverified": True,
                              "error_class": type(exc).__name__}
             mark(state, "recent_form_request_error")
+            # Distinguish rate/network failures from exhausted pagination.
+            # These are diagnostic counters only: neither bypasses risk checks.
+            if "Settled-loss history incomplete after" in str(exc):
+                mark(state, "recent_history_page_cap")
+            elif "pagination" in str(exc).lower():
+                mark(state, "recent_history_pagination_invalid")
+            else:
+                mark(state, "recent_history_api_or_data_error")
             print("V33 RECENT FORM CACHED WARNING:", wallet[:12],
                   type(exc).__name__, str(exc)[:110])
             return "recent_history_unverified"
