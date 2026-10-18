@@ -353,5 +353,105 @@ class TruthTests(unittest.TestCase):
         self.assertEqual(result[0]["result"],"loss")
 
 
+    def test_old_unchecked_shadow_precedes_forty_new_market_quotes(self):
+        now = 1792305000
+        old_condition = "0x" + "a"*64
+        old_key = W+"|"+old_condition+"|yes"
+        previous = [{"wallet": W, "condition": old_condition, "token_id": "yes",
+                     "result": "not_checked", "alert_at": now-3600,
+                     "checked_at": 0, "settled_at": None}]
+        new = {W+"|"+("0x"+format(i+5, "064x"))+"|yes": now-120
+               for i in range(40)}
+        with mock.patch.object(a.time, "time", return_value=now):
+            with mock.patch.object(a, "classify", return_value=("loss",now)) as remote:
+                rows = a.audit_signals(new, {}, {}, previous, max_checks=1,
+                                       historical_shadow=True)
+        self.assertEqual(remote.call_count, 1)
+        by_key = {x["wallet"]+"|"+x["condition"]+"|"+x["token_id"]: x for x in rows}
+        self.assertEqual(by_key[old_key]["result"], "loss")
+        self.assertEqual(sum(x["result"] == "not_checked" for x in rows), 40)
+
+    def test_shadow_book_quote_archives_then_resolves_after_ring_eviction(self):
+        now = 1792305000
+        stamp = now-700
+        key = W+"|"+C+"|yes"
+        quote = {key: {"topic":"sports", "decision":"blocked_recent",
+                       "hypothetical_copy_ask": .5,
+                       "hypothetical_copy_stake_usd": 5,
+                       "hypothetical_copy_shares": 10,
+                       "book_quoted_at":stamp, "quoted_at":stamp,
+                       "source_trade_at":stamp-25}}
+        with mock.patch.object(a.time, "time", return_value=now):
+            with mock.patch.object(
+                    a, "classify", return_value=("unknown_resolution_pending",None)):
+                first = a.audit_signals({key:stamp}, {}, {}, None, quote,
+                                        max_checks=1, historical_shadow=True)
+        self.assertEqual(len(first),1)
+        self.assertEqual(first[0]["result"], "unknown_resolution_pending")
+        self.assertAlmostEqual(first[0]["original_book_quote"]
+                               ["hypothetical_copy_ask"], .5)
+        self.assertNotIn("paper_hold_pnl_no_fees",first[0])
+        with mock.patch.object(a.time,"time",return_value=now+3601):
+            with mock.patch.object(a,"classify",return_value=("loss",now+3000)) as remote:
+                recovered = a.audit_signals({}, {}, {}, first, {},
+                                            max_checks=1,historical_shadow=True)
+        self.assertEqual(remote.call_count,1)
+        self.assertEqual(len(recovered),1)
+        self.assertEqual(recovered[0]["result"],"loss")
+        self.assertEqual(recovered[0]["paper_hold_pnl_no_fees"],-5.0)
+        self.assertEqual(recovered[0]["original_book_quote"]["book_quoted_at"],stamp)
+
+    def test_shadow_archived_quote_cannot_be_replaced_by_later_book_snapshot(self):
+        now = 1792305000
+        stamp = now-700
+        key = W+"|"+C+"|yes"
+        first = [{"wallet":W,"condition":C,"token_id":"yes",
+                  "result":"unknown_resolution_pending", "checked_at":now-4000,
+                  "alert_at":stamp, "settled_at":None,
+                  "original_book_quote":{
+                    "topic":"sports","hypothetical_copy_ask":.5,
+                    "hypothetical_copy_stake_usd":5,
+                    "hypothetical_copy_shares":10,
+                    "book_quoted_at":stamp,"source_trade_at":stamp-20}}]
+        manipulated = {key: {"topic":"sports", "hypothetical_copy_ask":.2,
+                             "hypothetical_copy_stake_usd":5,
+                             "hypothetical_copy_shares":25,
+                             "book_quoted_at":stamp}}
+        with mock.patch.object(a.time,"time",return_value=now):
+            with mock.patch.object(a,"classify",return_value=("win",now)) as remote:
+                rows=a.audit_signals({key:stamp},{},{},first,manipulated,
+                                     max_checks=1,historical_shadow=True)
+        self.assertEqual(remote.call_count,1)
+        self.assertEqual(rows[0]["original_book_quote"]["hypothetical_copy_ask"],.5)
+        self.assertEqual(rows[0]["paper_hold_pnl_no_fees"],5.0)
+
+    def test_shadow_no_original_quote_must_not_inherit_opaque_profit(self):
+        now = 1792305000
+        stamp = now-700
+        key = W+"|"+C+"|yes"
+        previous = [{"wallet":W,"condition":C,"token_id":"yes",
+                     "result":"win","alert_at":stamp,
+                     "settled_at":now-100,
+                     "paper_hold_pnl_no_fees":900.0,"paper_stake_usd":5}]
+        with mock.patch.object(a.time,"time",return_value=now):
+            rows=a.audit_signals({}, {}, {}, previous, {},
+                                 historical_shadow=True)
+        self.assertEqual(len(rows),1)
+        self.assertNotIn("paper_hold_pnl_no_fees",rows[0])
+        self.assertNotIn("original_book_quote",rows[0])
+
+    def test_expired_shadow_archive_rows_are_not_dressed_as_current(self):
+        now=1792305000
+        old=now-a.SHADOW_RETENTION_SECONDS-60
+        previous=[{"wallet":W,"condition":C,"token_id":"yes",
+                   "result":"loss","alert_at":old,"settled_at":old+100}]
+        with mock.patch.object(a.time,"time",return_value=now):
+            with mock.patch.object(a,"classify") as remote:
+                rows=a.audit_signals({}, {}, {}, previous, {},
+                                     historical_shadow=True)
+        remote.assert_not_called()
+        self.assertEqual(rows,[])
+
+
 if __name__=="__main__":
     unittest.main()
