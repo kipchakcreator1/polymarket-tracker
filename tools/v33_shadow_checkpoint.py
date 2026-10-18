@@ -173,6 +173,11 @@ def build_checkpoint(previous, state, report, now=None,
                      for x in after.values())
     original_quote_count = sum(isinstance(x.get("original_book_quote"), dict)
                                for x in after.values())
+    new_with_original_quote = sum(
+        isinstance(x.get("original_book_quote"), dict) for x in newly_final)
+    new_by_decision = collections.Counter(
+        str(x.get("shadow_decision") or "unknown_decision") + "_" +
+        str(x.get("result")) for x in newly_final)
     current_keys = set(sent)
     newest = max(sent.values()) if sent else None
     oldest = min(sent.values()) if sent else None
@@ -182,8 +187,20 @@ def build_checkpoint(previous, state, report, now=None,
     elapsed = now-previous_at if previous_at > 0 else None
     input_unseen_gap = bool(elapsed and ring_span is not None and
                             elapsed > ring_span)
+    missing_quote_count = len(after)-original_quote_count
+    # On the FIRST run we cannot prove what the prior 900-entry ring evicted.
+    # Previously saved true sports rows also may lack book quote provenance.
+    first_run_history_unknown = previous_at == 0
     breach = (bool(ignored["capacity_eviction"]) or bool(collisions)
-              or input_unseen_gap)
+              or input_unseen_gap or first_run_history_unknown
+              or missing_quote_count > 0)
+    runs_per_hour = max(0, min(12, int(
+        os.getenv("V33_SHADOW_SCHEDULE_RUNS_PER_HOUR", "0"))))
+    capacity_per_hour = runs_per_hour*max_checks if runs_per_hour else None
+    ring_rate_proxy = (round(len(sent)*3600/ring_span, 2)
+                       if ring_span and ring_span > 0 else None)
+    observed_interval_rate = (round(new_keys*3600/elapsed, 2)
+                              if elapsed and elapsed >= 1800 else None)
     meta = {
         "completed_runs": int((old.get("meta") or {}).get("completed_runs") or 0)+1,
         "source_truth_updated_at": report.get("updated_at"),
@@ -200,7 +217,16 @@ def build_checkpoint(previous, state, report, now=None,
         "newly_final_classified_this_run": len(newly_final),
         "newly_final_wins": sum(x.get("result") == "win" for x in newly_final),
         "newly_final_losses": sum(x.get("result") == "loss" for x in newly_final),
+        "newly_final_by_decision": dict(new_by_decision),
+        "newly_final_with_original_quote": new_with_original_quote,
         "not_yet_terminal": unverified,
+        "first_run_history_unknown": first_run_history_unknown,
+        "ring_rate_proxy_per_hour_not_verified_arrival_rate": ring_rate_proxy,
+        "actual_new_quote_keys_per_hour_since_checkpoint": observed_interval_rate,
+        "configured_max_checks_per_hour": capacity_per_hour,
+        "estimated_incoming_exceeds_check_capacity": (
+            ring_rate_proxy > capacity_per_hour
+            if ring_rate_proxy is not None and capacity_per_hour else None),
         "status_counts": dict(statuses),
         "api_checks_upper_bound": max_checks,
         "minimum_runs_to_recheck_current_backlog": math.ceil(unverified/max_checks),
