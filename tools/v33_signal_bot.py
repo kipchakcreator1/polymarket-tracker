@@ -452,6 +452,7 @@ def recent_form_reason(state, wallet, now):
     cache = state.setdefault("recent_form_cache", {})
     value = cache.get(wallet)
     if (isinstance(value, dict) and value.get("confirmed_risk_veto") and
+            not (MAJOR_LOSS_MAX_90D < 0 and value.get("confirmed_risk_veto") == "major_unredeemed_loss_cluster_90d") and
             0 <= now-int(value.get("checked_at") or 0) <=
             RECENT_RISK_VETO_CACHE_SECONDS):
         return value["confirmed_risk_veto"]
