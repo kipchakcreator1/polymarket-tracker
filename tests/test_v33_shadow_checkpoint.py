@@ -41,6 +41,8 @@ class DurableCheckpointTests(unittest.TestCase):
         self.assertEqual(one["rows"][0]["shadow_decision"], "blocked_recent")
         self.assertEqual(one["rows"][0]["original_book_quote"]["hypothetical_copy_ask"], .5)
         self.assertEqual(one["meta"]["newly_final_classified_this_run"], 0)
+        self.assertTrue(one["meta"]["first_run_history_unknown"])
+        self.assertTrue(one["meta"]["coverage_breach_or_unknown"])
 
         # The public signal ring evicts the bet. Keep its first observed ask.
         later = NOW + 3700
@@ -121,6 +123,23 @@ class DurableCheckpointTests(unittest.TestCase):
         self.assertFalse(checkpoint["meta"]["unbiased_causal_filter_evaluation_possible"])
         self.assertEqual(checkpoint["meta"]["filled_order_count"],0)
         self.assertGreaterEqual(checkpoint["meta"]["not_yet_terminal"],1)
+
+    def test_throughput_pressure_is_estimate_not_claim_of_complete_coverage(self):
+        extra="0x"+"c"*64
+        state,report=inputs({
+            K: live(NOW-40),
+            W+"|"+extra+"|"+T: live(NOW-30)
+        })
+        with mock.patch.dict(mod.os.environ,
+                             {"V33_SHADOW_SCHEDULE_RUNS_PER_HOUR":"6"}), \
+             mock.patch.object(truth.time,"time",return_value=NOW), \
+             mock.patch.object(truth,"classify",
+                               return_value=("unknown_resolution_pending",None)):
+            result=mod.build_checkpoint(None,state,report,now=NOW,max_checks=1)
+        self.assertEqual(result["meta"]["configured_max_checks_per_hour"],6)
+        self.assertTrue(result["meta"]["estimated_incoming_exceeds_check_capacity"])
+        self.assertIn("ring_rate_proxy_per_hour_not_verified_arrival_rate",
+                      result["meta"])
 
     def test_invalid_schema_or_budget_fails_closed(self):
         with self.assertRaises(ValueError):
