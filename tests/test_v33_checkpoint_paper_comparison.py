@@ -82,10 +82,28 @@ class CohortComparisonTests(unittest.TestCase):
     def test_same_market_in_two_groups_excluded_not_double_counted(self):
         got=m.build_report(checkpoint([archived()]),forward([sent(c=C)]))
         self.assertEqual(got["market_condition_duplicates_excluded"],2)
+        self.assertEqual(got["market_condition_collision_inventory"]
+                         ["conditions_crossing_rejected_and_sent"],1)
+        self.assertEqual(got["market_condition_collision_inventory"]
+                         ["quote_rows_in_cross_cohort_conditions"],2)
         self.assertEqual(got["by_cohort"]["telegram_sent"]
                          ["observed_unique_market_conditions"],0)
         self.assertEqual(got["by_cohort"]["blocked_recent"]
                          ["observed_unique_market_conditions"],0)
+
+    def test_within_rejected_collision_is_not_mistaken_for_sent_overlap(self):
+        a=archived(c=C)
+        b=archived(c=C)
+        b["token_id"]="different-token"
+        got=m.build_report(checkpoint([a,b]),forward([sent(c=D)]))
+        v=got["market_condition_collision_inventory"]
+        self.assertEqual(v["conditions_crossing_rejected_and_sent"],0)
+        self.assertEqual(v["conditions_repeated_only_in_rejected_group"],1)
+        self.assertEqual(v["conditions_repeated_only_in_sent_group"],0)
+        self.assertEqual(got["by_cohort"]["blocked_recent"]
+                         ["observed_unique_market_conditions"],0)
+        self.assertEqual(got["by_cohort"]["telegram_sent"]
+                         ["observed_unique_market_conditions"],1)
 
     def test_prospective_quote_provenance_required(self):
         f=forward([sent()])
