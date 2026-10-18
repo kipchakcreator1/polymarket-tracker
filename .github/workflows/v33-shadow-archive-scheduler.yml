@@ -35,6 +35,8 @@ jobs:
           python -m py_compile tools/v33_shadow_checkpoint.py tests/test_v33_shadow_checkpoint.py
           python -m unittest discover -s tests -p 'test_v33_shadow_checkpoint.py' -v
           python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
+          python -m py_compile tools/v33_checkpoint_paper_comparison.py tests/test_v33_checkpoint_paper_comparison.py
+          python -m unittest discover -s tests -p 'test_v33_checkpoint_paper_comparison.py' -v
       - name: Snapshot v3.3 live research state READ ONLY
         uses: actions/checkout@v4
         with:
@@ -68,6 +70,11 @@ jobs:
                   out.write(f"- {key}: {metrics.get(key)}\n")
               out.write("- The saved checkpoint is NOT a live trading strategy.\n")
           PY
+      - name: Describe archived rejected vs sent paper quotes (NO FILLS)
+        env:
+          PYTHONPATH: .
+          V33_COMPARE_SOURCE_DIR: v33-snapshot
+        run: python tools/v33_checkpoint_paper_comparison.py
       - name: Commit only archival checkpoint to audit branch
         run: |
           git config user.name "github-actions[bot]"
@@ -86,6 +93,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: v33-shadow-hourly-health
-          path: artifacts/v33-shadow-checkpoint-health.json
+          path: |
+            artifacts/v33-shadow-checkpoint-health.json
+            artifacts/v33-rejected-vs-sent-paper.json
           if-no-files-found: ignore
           retention-days: 14
