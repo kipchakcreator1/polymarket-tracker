@@ -518,7 +518,12 @@ def fetch_open_positions(wallet):
                   "limit": ACTIVE_PAGE_LIMIT}
         if cursor:
             params["cursor"] = cursor
-        response = v2.request_json("/v2/positions", params, tries=2, timeout=12)
+        # Retry transient transport failures once more before rejecting the
+        # signal. Never treat an incomplete portfolio as verified.
+        try:
+            response = v2.request_json("/v2/positions", params, tries=2, timeout=12)
+        except (RuntimeError, TimeoutError, OSError):
+            response = v2.request_json("/v2/positions", params, tries=2, timeout=12)
         if not (isinstance(response, dict) and
                 isinstance(response.get("data"), list) and
                 isinstance(response.get("pagination"), dict)):
