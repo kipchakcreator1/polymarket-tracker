@@ -37,6 +37,8 @@ jobs:
           python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
           python -m py_compile tools/v33_checkpoint_paper_comparison.py tests/test_v33_checkpoint_paper_comparison.py
           python -m unittest discover -s tests -p 'test_v33_checkpoint_paper_comparison.py' -v
+          python -m py_compile tools/v33_risk_reason_outcome_audit.py tests/test_v33_risk_reason_outcome_audit.py
+          python -m unittest discover -s tests -p 'test_v33_risk_reason_outcome_audit.py' -v
       - name: Snapshot v3.3 live research state READ ONLY
         uses: actions/checkout@v4
         with:
@@ -93,6 +95,26 @@ jobs:
                             f"unknown/not-final: {row['not_final_or_unverified_in_quote_journal']}\n")
               out.write("- No same-league guarantee, causal effect estimate, or real fill ROI.\n")
           PY
+      - name: Aggregate reason-labeled settled and unresolved sports BUYs (NO FILLS)
+        env:
+          PYTHONPATH: .
+        run: |
+          python tools/v33_risk_reason_outcome_audit.py
+          python - <<'PY'
+          import json,os,pathlib
+          j=json.loads(pathlib.Path("artifacts/v33-risk-reason-settlement.json").read_text())
+          groups=j["by_proven_reason_or_legacy_group"]
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              f.write("\\n## Prospective veto reasons vs official settlement\\n")
+              f.write(f"- Archived position keys: {j['archived_rows']}\\n")
+              f.write(f"- Historical unknown veto reason records: {j['overall_legacy_or_unproven_reason_observations']}\\n")
+              for name,group in sorted(groups.items()):
+                  f.write(f"- {name}: observed {group['observed_position_keys']}; "
+                          f"settled {group['final_classifications']}; "
+                          f"original quoted unique conditions "
+                          f"{group['unique_market_conditions_with_verifiable_original_quote']}\\n")
+              f.write("- Incomplete/selected market sample; NO causal filter effect or real copy ROI.\\n")
+          PY
       - name: Commit only archival checkpoint to audit branch
         run: |
           git config user.name "github-actions[bot]"
@@ -114,5 +136,6 @@ jobs:
           path: |
             artifacts/v33-shadow-checkpoint-health.json
             artifacts/v33-rejected-vs-sent-paper.json
+            artifacts/v33-risk-reason-settlement.json
           if-no-files-found: ignore
           retention-days: 14
