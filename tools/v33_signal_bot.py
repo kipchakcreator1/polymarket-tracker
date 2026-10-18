@@ -1230,6 +1230,8 @@ def deliver(state, selected, now, *, clock=None):
                                       recent_reason == "recent_history_unverified"
                                       else "blocked_recent")
                 shadow["risk_reason"] = recent_reason
+                shadow["risk_gate"] = "recent"
+                shadow["risk_checked_at"] = checked_at
             mark(state, recent_reason)
             if (recent_reason == "recent_history_unverified" and
                     checked_at - int(group["last"]) < MAX_AGE):
@@ -1252,7 +1254,11 @@ def deliver(state, selected, now, *, clock=None):
             continue  # never send when active PnL cannot be verified
         if active_reason:
             if topic == "sports":
-                state["shadow_evidence"][dedupe]["decision"] = "blocked_active"
+                shadow = state["shadow_evidence"][dedupe]
+                shadow["decision"] = "blocked_active"
+                shadow["risk_gate"] = "active_portfolio"
+                shadow["risk_reason"] = active_reason
+                shadow["risk_checked_at"] = checked_at
             mark(state, active_reason)
             del state["pending"][key]
             continue
@@ -1289,7 +1295,11 @@ def deliver(state, selected, now, *, clock=None):
             continue  # unsent pending trade remains available for retry
         state["sent"][dedupe] = send_at
         if topic == "sports" and dedupe in state.get("shadow_evidence", {}):
-            state["shadow_evidence"][dedupe]["decision"] = "sent_telegram"
+            shadow = state["shadow_evidence"][dedupe]
+            shadow["decision"] = "sent_telegram"
+            shadow["risk_gate"] = "passed"
+            shadow["risk_reason"] = None
+            shadow["risk_checked_at"] = send_at
         if isinstance(receipt, int) and receipt > 0:
             state["last_telegram_acceptance"] = {
                 "at": send_at, "message_id": receipt, "kind": "buy",
