@@ -23,6 +23,10 @@
 
 [Offline regression workflow](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39103267613) passed **108 v3.3 BUY/risk tests, 8 OPEN tests, 5 bounded v2 audit tests** = **121 tests**. Unit tests use mocks, while the diagnostic step performs narrowly bounded public read-only API calls. Passing regression tests does not establish live signal profitability, coverage, or correctness of every historical position.
 
+## Cross-check against existing research-only candidate ranking
+
+The branch also already contains `research/v33_evidence_rank.json` (source updated at 2026-10-18 UTC). It lists **169 wallets audited**, **0 historical-audit-ready**, **0 forward-paper-evaluable**, **0 live-approved**. These are report-status counts, not proof that no profitable sports signal exists. It means the present evidence does not support automatically replacing the wallet shortlist with an apparently profitable copy-trader ranking. The separate `research/v33_wallet_copy_cohort.json` explicitly labels its ROI estimates price proxies, not executable net follower returns, and likewise approves 0 wallets for live BUY.
+
 ## Still unresolved / next gate
 
 - The old universe shortlist still uses up to 100 **legacy closed positions** to rank and admit 300 wallets. It is not a complete economic or predictive ranking. Keep this behavior unchanged in production pending a real, event-level and cash-flow-reconciled replacement.
