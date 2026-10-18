@@ -20,7 +20,7 @@ FOCUS_PREFIXES = (
     "0x5b6331e7ff",  # Priority research control
 )
 STATUS_TYPES = ("CLOSED", "REDEEMABLE_LOST")
-PAGE_LIMIT = 60
+PAGE_LIMIT = 250  # one bounded real API page; no pagination claims
 
 
 def timestamp_check(raw, now):
@@ -52,6 +52,7 @@ def position_page(rows, status, now):
         raise ValueError("Non-list position page")
     state_counts = {}
     invalid_times = []
+    timestamp_states = {}
     pnl_rows = 0
     negative_pnl = 0
     major_losses = 0
@@ -61,6 +62,7 @@ def position_page(rows, status, now):
         kind = str(row.get("status"))
         state_counts[kind] = state_counts.get(kind, 0) + 1
         ts = timestamp_check(row.get("last_event_at"), now)
+        timestamp_states[ts["state"]] = timestamp_states.get(ts["state"], 0) + 1
         if ts["state"] != "valid" and len(invalid_times) < 5:
             invalid_times.append(ts)
         if status == "REDEEMABLE_LOST" and row.get("status") == "REDEEMABLE" and row.get("redeemable") is True:
@@ -75,6 +77,7 @@ def position_page(rows, status, now):
                 negative_pnl += int(pnl < -.01)
                 major_losses += int(pnl <= -100)
     return {"rows": len(rows), "status_values": state_counts,
+            "timestamp_states": timestamp_states,
             "invalid_timestamps_sample": invalid_times,
             "pnl_rows_with_observed_numeric_values": pnl_rows,
             "redeemable_negative_rows": negative_pnl,
