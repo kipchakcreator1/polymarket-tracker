@@ -124,6 +124,67 @@ def merge_rows(previous, truth_rows, now):
     return list(saved.values()), ignored, collisions
 
 
+FINAL_DECISIONS = {
+    "blocked_recent": "recent",
+    "blocked_active": "active_portfolio",
+    "sent_telegram": "passed",
+}
+INTERIM_DECISIONS = {"book_verified_only", "awaiting_recent_history"}
+
+
+def capture_original_risk_verdict(row, live_quote, now):
+    """Archive the prospective risk verdict, never invent older rejection causes.
+
+    Quote and decision must refer to the SAME original market observation.
+    Existing final verdicts are immutable; an interim decision may graduate
+    only to a final, validated observation. The live ring is not a ledger.
+    """
+    if not isinstance(live_quote, dict):
+        return False
+    decision = live_quote.get("decision")
+    expected_gate = FINAL_DECISIONS.get(decision)
+    if expected_gate is None:
+        return False
+    try:
+        first = int(row["alert_at"])
+        source_quote_at = int(live_quote["quoted_at"])
+        checked_at = int(live_quote["risk_checked_at"])
+    except (ValueError, KeyError, TypeError, OverflowError):
+        return False
+    if not (abs(first-source_quote_at) <= 2 and
+            first-2 <= checked_at <= now+300 and
+            checked_at >= source_quote_at-2):
+        return False
+    if live_quote.get("risk_gate") != expected_gate:
+        return False
+    reason = live_quote.get("risk_reason")
+    if decision == "sent_telegram":
+        if reason is not None:
+            return False
+    elif (not isinstance(reason, str) or not 1 <= len(reason) <= 128
+          or any(x in reason for x in ("\\n", "\\r", "|"))):
+        return False
+    current = row.get("shadow_decision")
+    if current not in (None, "", decision, *INTERIM_DECISIONS):
+        return False
+    # In a few legacy records the shadow_decision was frozen from a previous
+    # run but the detailed fields had not yet existed. The original live
+    # evidence is still available and is contemporaneous; do not backfill
+    # from historical market prices or guessed API history.
+    existing = row.get("risk_gate")
+    if existing is not None:
+        if (existing != expected_gate or
+                row.get("risk_reason") != reason):
+            return False
+        return True
+    row["shadow_decision"] = decision
+    row["risk_gate"] = expected_gate
+    row["risk_reason"] = reason
+    row["risk_checked_at"] = checked_at
+    row["risk_provenance"] = "same_original_live_quote_at_archive_capture"
+    return True
+
+
 def build_checkpoint(previous, state, report, now=None,
                      verifier=None, max_checks=CHECKS_PER_RUN):
     """Verifier injection is for tests; real runs use public v2 classifier."""
@@ -165,6 +226,9 @@ def build_checkpoint(previous, state, report, now=None,
             decision = current.get("decision")
             if isinstance(decision, str) and decision:
                 row["shadow_decision"] = decision
+        # Once a contemporaneous verified reason exists, freeze it beside the
+        # original quote for prospective settlement cross-referencing.
+        capture_original_risk_verdict(row, current, now)
     newly_final = [row for k, row in after.items() if
                    row.get("result") in ("win", "loss") and
                    before.get(k) not in ("win", "loss")]
@@ -174,6 +238,15 @@ def build_checkpoint(previous, state, report, now=None,
                      for x in after.values())
     original_quote_count = sum(isinstance(x.get("original_book_quote"), dict)
                                for x in after.values())
+    reason_captured = collections.Counter(
+        str(x.get("risk_gate")) for x in after.values()
+        if x.get("risk_provenance") ==
+        "same_original_live_quote_at_archive_capture")
+    reasons_by_stage = collections.Counter(
+        str(x.get("risk_gate")) + ":" + str(x.get("risk_reason"))
+        for x in after.values()
+        if x.get("risk_provenance") ==
+        "same_original_live_quote_at_archive_capture")
     new_with_original_quote = sum(
         isinstance(x.get("original_book_quote"), dict) for x in newly_final)
     new_by_decision = collections.Counter(
@@ -217,6 +290,10 @@ def build_checkpoint(previous, state, report, now=None,
         "risk_of_unobserved_ring_evictions": input_unseen_gap,
         "archived_rows": len(after),
         "archived_quotes_at_original_observation": original_quote_count,
+        "captured_exact_verdicts_by_gate": dict(reason_captured),
+        "captured_exact_reasons_by_gate": dict(reasons_by_stage),
+        "exact_reason_unavailable_or_legacy_rows":
+            len(after)-sum(reason_captured.values()),
         "missing_original_quote_rows": len(after)-original_quote_count,
         "prior_truth_rows": len(from_truth),
         "previous_checkpoint_rows": len(previous_rows),
