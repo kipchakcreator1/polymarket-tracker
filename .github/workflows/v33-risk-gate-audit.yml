@@ -59,6 +59,15 @@ jobs:
         run: |
           python -m py_compile tools/v33_result_audit.py tests/test_v33_result_audit.py
           python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
+      - name: Read-only 10-market shadow settlement probe (public data, no Telegram)
+        continue-on-error: true
+        env:
+          PYTHONPATH: .
+          V33_SHADOW_PROBE_INPUT_DIR: v33-snapshot
+        run: |
+          python -m py_compile tools/v33_shadow_resolution_probe.py tests/test_v33_shadow_resolution_probe.py
+          python -m unittest discover -s tests -p 'test_v33_shadow_resolution_probe.py' -v
+          python tools/v33_shadow_resolution_probe.py
       - name: Independently validate quoted-price sports copyability and filter evidence
         env:
           PYTHONPATH: .
@@ -76,5 +85,6 @@ jobs:
             artifacts/v33-risk-api-audit.json
             artifacts/v33-shadow-wallet-queue.json
             artifacts/v33-copyability-gate.json
+            artifacts/v33-shadow-resolution-probe.json
           if-no-files-found: ignore
           retention-days: 7
