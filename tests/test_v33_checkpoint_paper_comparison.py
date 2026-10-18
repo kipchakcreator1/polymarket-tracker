@@ -149,6 +149,37 @@ class CohortComparisonTests(unittest.TestCase):
         self.assertIsNone(overlap["causal_filter_effect"])
         self.assertFalse(overlap["eligible_for_changing_live_gates"])
 
+    def test_maturity_inventory_keeps_pending_quotes_without_declaring_them_losses(self):
+        first=archived(c=C, result="unknown_resolution_pending",
+                       quoted=1792250000)
+        second=archived(c=D, result="win", quoted=1792250100)
+        f=forward([])
+        summary=m.observable_quote_outcome_maturity(checkpoint([first,second]),f)
+        blocked=summary["cohorts"]["blocked_recent"]
+        self.assertEqual(blocked["unique_quote_conditions"],2)
+        self.assertEqual(blocked["final_outcomes_in_quote_journal"],1)
+        self.assertEqual(blocked["not_final_or_unverified_in_quote_journal"],1)
+        self.assertFalse(summary["complete_outcome_population_verified"])
+
+    def test_maturity_inventory_reports_missing_original_proof_not_zero_losses(self):
+        got=m.observable_quote_outcome_maturity(
+            checkpoint([archived(original=False)]),forward([]))
+        blocked=got["cohorts"]["blocked_recent"]
+        self.assertEqual(blocked["unique_quote_conditions"],0)
+        self.assertEqual(got["missing_original_quote_proof"]
+                         ["blocked_missing_original_quote"],1)
+        self.assertEqual(blocked["final_outcomes_in_quote_journal"],0)
+
+    def test_maturity_inventory_deduplicates_same_market_before_quote_counts(self):
+        a=archived()
+        b=archived()
+        b["token_id"]="different-token"
+        got=m.observable_quote_outcome_maturity(
+            checkpoint([a,b]),forward([]))
+        block=got["cohorts"]["blocked_recent"]
+        self.assertEqual(block["unique_quote_conditions"],0)
+        self.assertEqual(block["duplicate_condition_rows_excluded"],2)
+
 
 if __name__ == "__main__":
     unittest.main()
