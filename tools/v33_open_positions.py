@@ -211,8 +211,12 @@ def scan(state, selected, now, *, clock=None):
             accepted+=1
             break  # cap one OPEN alert per checked wallet
     state["open_alert_times"]=recent[-ALERTS_PER_HOUR:]
+    # The Telegram ack timestamp is sampled AFTER the scan begins.
+    # Pruning against the initial scan clock would drop every just-sent OPEN
+    # whenever API verification takes even one second, allowing duplicates.
     state["open_sent"]={k:v for k,v in sent.items()
-                        if 0<=checked_at-int(v)<=30*86400}
+                        if -bot.EVIDENCE_FUTURE_SKEW_SECONDS <=
+                        checked_at-int(v)<=30*86400}
     state["open_position_evidence"]=bot.keep_forward_evidence(
         evidence,checked_at,"quoted_at",limit=900)
     return accepted
