@@ -341,6 +341,13 @@ def audit_signals(sent, gamma_cache, resolution_cache, previous_rows=None,
         # the quote remains available after the 900-entry live ring evicts it.
         paper = signal_evidence.get(key)
         row = dict(row)
+        if historical_shadow and isinstance(old, dict):
+            # Re-querying an unknown resolution creates a new result record.
+            # Preserve the ORIGINAL stored quote and decision across this
+            # refresh; do not replace them with a later CLOB snapshot.
+            for field in ("original_book_quote", "shadow_decision"):
+                if field not in row and field in old:
+                    row[field] = old[field]
         if historical_shadow:
             # Recompute paper results from authenticated original quote, never
             # inherit an opaque PnL from earlier legacy report rows.
