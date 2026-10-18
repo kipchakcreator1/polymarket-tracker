@@ -53,6 +53,31 @@ PYTHONPATH=. V33_SHADOW_INPUT_DIR=v33-snapshot V33_SHADOW_INPUT_REF=v3.3-wallet-
 
 The GitHub Actions run stores `artifacts/v33-shadow-wallet-queue.json` and `artifacts/v33-risk-api-audit.json` in artifact `v33-audit-risk-diagnostics` with seven-day retention. No trade orders or Telegram deliveries have occurred.
 
+## Forward copyability and previously dropped shadow outcomes
+
+**Scope:** The additional copyability module and archived-shadow repair are **audit-branch only**. They are not collecting new live traffic on their own, and nothing has been merged into the running `v3.3-wallet-research` monitor.
+
+A new independent validator `tools/v33_copyability_validation.py` reads the fresh production-research snapshots `research/v33_forward_net_paper.json` and `research/v33_signal_state.json` without contacting Telegram or placing orders. It checks the original quote, depth/stake consistency, independent outcome status inherited from the official v2 audit, each paper-PnL scenario against the price formula, duplicates by market condition, and source-to-quote times only when original metadata exists. It explicitly refuses to impute missing outcomes or infer fee receipts/fills.
+
+[Successful CI run with 178 tests](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39106429499): **108 BUY/risk, 8 OPEN, 5 timestamp/loss API, 9 shadow-queue, 37 sports truth, 11 copyability = 178/178 pass**. The tests are offline; the audit workflow additionally fetches a small public v2 sample and reports a read-only current research snapshot.
+
+In the **snapshotted** forward paper ledger: **905 quote rows**, comprising **8 Telegram-sent** and **897 shadow-only**; **3 independently classified settled observations**, all in sent stream, outcomes **1 win, 2 losses**; **0 settled rejected observations**, **900 awaiting settlement classification**, **2 not verified/nonstandard sport**. Recalculated model HOLD on the $15 three-case sample yields **−$6.41667 (−42.7778%)** under the hypothetical 5% taker-fee scenario, and **−$6.81349 (−45.4233%)** when modeling both 5% fee and 5% worse entry. These are *not* actual fees/returns, and 3 observations are far below the 30-distinct-market descriptive threshold. For the 3 matched quote/source-trade times, observed source-trade→book-quote median was **35 seconds** (not Telegram/client receive latency). The rejected side has **no estimable ROI**, so a false-negative rate or causal filter benefit is **NULL**, not 0. Even 30 rows per stream would not solve self-selection bias or certify independent sporting events.
+
+### Important shadow truth collector defect and audit-only repair
+
+The existing `tools/v33_result_audit.py` code checked only **25 rejected-shadow market results each hourly run, newest first**, while the monitoring state capped `shadow_evidence` at 900 and prior shadow rows absent from the latest ring were dropped from the next truth report. Thus settled outcomes and original executable-looking quotes could be **censored before classification**.
+
+The audit-branch collector now:
+
+- Keeps previously seen rejected picks (up to **45 days**, subject to a **12,000-row storage cap**) with their original quote metadata, once authenticated from contemporaneous state. No later price is allowed to replace the first recorded quote.
+- Checks old `not_checked` and overdue unresolved market results before recently arrived signals, with an explicit 25-per-run API budget; reports archive size, number never checked, quote capture count and cap/eviction warnings.
+- Carries the original archived quote across resolution-status rechecks, and **recalculates paper PnL only from that quote**. If no quote was preserved, old PnL fields are removed rather than trusted or retrospectively imputed.
+- Maintains the decision tag (blocked vs sent) across a quote's removal from the rolling state, and does not label shadows as Telegram signals or placed orders.
+
+This upgrade is covered by five additional regression cases, including starvation, cache eviction, impossible retroactive improvement of quote price, missing original proof and time-window expiry. Passing these tests does **not** mean the running bot now archives more outcomes. Deployment and actual forward observation are still required to determine whether the backlog can drain at 25 checks/hour. This is a capacity constraint, not a claim of complete 45-day coverage. A cap-triggered eviction warning will mean outcomes remain censored.
+
+**Next validation gate:** independently instrument or safely canary the shadow outcome collector over multiple completed sports events and show a resolved sample for both rejected and sent groups, quote-age distribution, unresolvedness/retention gaps, and paper outcomes with explicit fee assumptions. Only then compare filters; any results remain observational and not actual net copy-trading performance.
+
 ## Still unresolved / next gate
 
 - The old universe shortlist still uses up to 100 **legacy closed positions** to rank and admit 300 wallets. It is not a complete economic or predictive ranking. Keep this behavior unchanged in production pending a real, event-level and cash-flow-reconciled replacement.
