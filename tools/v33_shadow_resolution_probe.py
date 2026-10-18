@@ -46,6 +46,20 @@ def run(state, truth, check_now=None):
         x for x in rows if x.get("result") in ("win","loss") and
         prior_resolved.get((x.get("wallet"),x.get("condition"),x.get("token_id")))
         not in ("win","loss")]
+    def decision_for(row):
+        key = "|".join((row.get("wallet") or "",
+                        row.get("condition") or "", row.get("token_id") or ""))
+        from_live = observed.get(key)
+        if isinstance(from_live, dict) and from_live.get("decision"):
+            return str(from_live["decision"])
+        older = previous.get((row.get("wallet"), row.get("condition"),
+                              row.get("token_id"))) or {}
+        return str(older.get("shadow_decision") or row.get("shadow_decision")
+                   or "UNKNOWN_DECISION")
+    newly_by_decision = collections.Counter(
+        decision_for(row)+"_"+str(row.get("result")) for row in newly_resolved)
+    newly_with_quote = sum(
+        isinstance(row.get("original_book_quote"), dict) for row in newly_resolved)
     statuses = collections.Counter(str(x.get("result")) for x in rows)
     total_quote_proof = sum(
         isinstance(x.get("original_book_quote"), dict) for x in rows)
@@ -58,6 +72,8 @@ def run(state, truth, check_now=None):
         "retained_rows_after_bounded_replay": len(rows),
         "newly_verified_resolved_win": sum(x.get("result")=="win" for x in newly_resolved),
         "newly_verified_resolved_loss": sum(x.get("result")=="loss" for x in newly_resolved),
+        "newly_verified_by_observed_shadow_decision": dict(newly_by_decision),
+        "newly_verified_with_original_quote": newly_with_quote,
         "all_retained_status_counts": dict(statuses),
         "rows_with_original_book_quote": total_quote_proof,
         "records_missing_quote_proof": len(rows)-total_quote_proof,
