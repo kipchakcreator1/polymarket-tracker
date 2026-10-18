@@ -73,7 +73,10 @@ def _api_error(exc):
     return type(exc).__name__
 
 
-def check(wallet, lookback, stage, cutoff, api=None, clock=None):
+def check(wallet, lookback, stage, cutoff, api=None, clock=None,
+          max_pages=MAX_PAGES):
+    if not 1 <= max_pages <= 12:
+        raise ValueError("Unsafe research pagination budget")
     api = api or v2.request_json
     clock = clock or time.monotonic
     started = clock()
@@ -86,7 +89,7 @@ def check(wallet, lookback, stage, cutoff, api=None, clock=None):
     foreign_wallet_rows = 0
     error = None
     state = "UNKNOWN"
-    for _ in range(MAX_PAGES):
+    for _ in range(max_pages):
         params = {
             "user":wallet, "start":max(1,cutoff-lookback),
             "end":cutoff,"limit":PAGE_SIZE,"taker_only":"false",
