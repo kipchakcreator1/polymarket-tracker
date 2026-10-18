@@ -8,12 +8,17 @@ The active 300-wallet monitoring list and its state are NEVER changed.
 import collections
 import json
 import math
+import os
+import time
 from pathlib import Path
 
-LEGACY = Path("research/v33_wallet_shortlist.json")
-EVIDENCE = Path("research/v33_evidence_rank.json")
-COHORT = Path("research/v33_wallet_copy_cohort.json")
-FORWARD = Path("research/v33_forward_net_paper.json")
+INPUT_ROOT = Path(os.getenv("V33_SHADOW_INPUT_DIR", "."))
+INPUT_REF = os.getenv("V33_SHADOW_INPUT_REF", "audit_branch_snapshot")
+LEGACY = INPUT_ROOT / "research/v33_wallet_shortlist.json"
+EVIDENCE = INPUT_ROOT / "research/v33_evidence_rank.json"
+COHORT = INPUT_ROOT / "research/v33_wallet_copy_cohort.json"
+FORWARD = INPUT_ROOT / "research/v33_forward_net_paper.json"
+RUNTIME = INPUT_ROOT / "research/v33_signal_state.json"
 RISK = Path("artifacts/v33-risk-api-audit.json")
 OUTPUT = Path("artifacts/v33-shadow-wallet-queue.json")
 MAX_QUEUE = 300
@@ -113,7 +118,8 @@ def forward_summary(rows):
     return out
 
 
-def build_report(legacy, evidence, cohort, forward, risk=None, limit=MAX_QUEUE):
+def build_report(legacy, evidence, cohort, forward, risk=None, limit=MAX_QUEUE,
+                 runtime=None, observed_at=None):
     if legacy.get("schema") != "v33_wallet_shortlist_1":
         raise ValueError("Invalid legacy shortlist schema")
     if evidence.get("schema") != "v33_evidence_rank_1":
@@ -146,7 +152,12 @@ def build_report(legacy, evidence, cohort, forward, risk=None, limit=MAX_QUEUE):
         w: row for row in cohort.get("wallets", []) if isinstance(row, dict)
         if (w := wallet_id(row.get("wallet")))
     }
-    paper = forward_summary(forward.get("positions"))
+    if forward.get("forward_only_no_backfilled_quotes") is False:
+        # Exclude potentially retrospectively reconstructed quotes from
+        # prospective paper evidence; never assume they were tradable.
+        paper = {}
+    else:
+        paper = forward_summary(forward.get("positions"))
     observed = {}
     all_wallets = sorted(set(legacy_rows) | set(evidence_rows) | set(cohort_rows))
     for item in observed_risk_pages(risk):
@@ -244,9 +255,37 @@ def build_report(legacy, evidence, cohort, forward, risk=None, limit=MAX_QUEUE):
     baseline_set = set(baseline)
     chosen_set = {x["wallet"] for x in chosen}
     old_in_audits = sum(w in evidence_rows for w in baseline)
+    last_saved = set()
+    last_saved_source = False
+    if isinstance(runtime, dict) and runtime.get("version") == 33:
+        cursors = runtime.get("cursors")
+        last_run = runtime.get("last_run") or {}
+        if (isinstance(cursors, dict) and cursors
+                and len(cursors) == last_run.get("watching")):
+            last_saved = {w for address in cursors if (w := wallet_id(address))}
+            last_saved_source = bool(last_saved)
+    input_times = [
+        v for v in (legacy.get("observed_at"),
+                    evidence.get("source_updated_at"),
+                    cohort.get("input_truth_updated_at"),
+                    forward.get("official_source_updated_at"))
+        if isinstance(v, int) and v > 0]
+    input_spread = max(input_times)-min(input_times) if input_times else None
+    now = int(observed_at if observed_at is not None else time.time())
+    stale = {name: (now-ts)//86400 > MAX_SOURCE_AGE_DAYS
+             for name, ts in (
+                 ("legacy_shortlist", legacy.get("observed_at")),
+                 ("sports_truth_evidence", evidence.get("source_updated_at")),
+                 ("copy_proxy_cohort", cohort.get("input_truth_updated_at")),
+                 ("forward_paper_truth", forward.get("official_source_updated_at")))
+             if isinstance(ts, int) and ts > 0}
     return {
         "schema": "v33_research_shadow_queue_1",
         "purpose": "research_priority_not_trade_signal",
+        "input_ref": INPUT_REF,
+        "generated_at": now,
+        "source_snapshot_spread_seconds": input_spread,
+        "older_than_seven_days": stale,
         "max_research_slots": limit,
         "source_timestamps": {
             "legacy_shortlist": legacy.get("observed_at"),
@@ -262,6 +301,11 @@ def build_report(legacy, evidence, cohort, forward, risk=None, limit=MAX_QUEUE):
         "baseline_not_live_explanation": "Snapshot sorted eligibility, not runtime priority, quarantine or live state.",
         "baseline_with_sports_audit": old_in_audits,
         "queue_overlap_with_snapshot_legacy": len(chosen_set & baseline_set),
+        "last_saved_runtime_cursors_available": last_saved_source,
+        "last_saved_runtime_wallets_count": len(last_saved),
+        "queue_overlap_with_last_saved_runtime": (
+            len(chosen_set & last_saved) if last_saved_source else None),
+        "runtime_cursor_snapshot_is_current_inventory": False,
         "status_counts": dict(collections.Counter(x["research_status"] for x in chosen)),
         "historical_audit_ready_in_queue": sum(x["sports_history_complete"] for x in chosen),
         "forward_model_30plus_conditions_in_queue": sum(x["forward_model_sample_sufficient"] for x in chosen),
@@ -276,13 +320,15 @@ def build_report(legacy, evidence, cohort, forward, risk=None, limit=MAX_QUEUE):
             "Forward paper quotes are not actual fills; several conditions can share a sporting event.",
             "Risk first-page samples can be incomplete even with pagination.has_more=false; no reconciled ledger.",
             "Inputs originate from different snapshots and dates; this is not a matched-time backtest.",
+            "The last saved runtime cursor set is a historical monitor snapshot, not verified real-time inventory.",
         ],
     }
 
 
 def main():
     report = build_report(load(LEGACY), load(EVIDENCE), load(COHORT),
-                          load(FORWARD), load(RISK, required=False))
+                          load(FORWARD), load(RISK, required=False),
+                          runtime=load(RUNTIME, required=False))
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(json.dumps(report, ensure_ascii=False,
                                 indent=2, allow_nan=False) + "\n", encoding="utf-8")
