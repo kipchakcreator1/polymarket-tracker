@@ -157,6 +157,23 @@ class DurableCheckpointTests(unittest.TestCase):
         self.assertIn("ring_rate_proxy_per_hour_not_verified_arrival_rate",
                       result["meta"])
 
+    def test_ten_minute_schedule_detects_new_backlog_pressure(self):
+        old={"schema":mod.SCHEMA,"last_saved_at":NOW-600,
+             "rows":[],"meta":{"completed_runs":3,
+                                "not_yet_terminal":0}}
+        state,report=inputs({K:live()})
+        with mock.patch.dict(mod.os.environ,
+                             {"V33_SHADOW_SCHEDULE_RUNS_PER_HOUR":"6"}), \
+             mock.patch.object(truth.time,"time",return_value=NOW), \
+             mock.patch.object(truth,"classify",
+                               return_value=("unknown_resolution_pending",None)):
+            result=mod.build_checkpoint(old,state,report,now=NOW,max_checks=1)
+        m=result["meta"]
+        self.assertEqual(m["observed_new_quote_keys"],1)
+        self.assertEqual(m["actual_new_quote_keys_per_hour_since_checkpoint"],6)
+        self.assertEqual(m["nonterminal_backlog_change_from_previous_run"],1)
+        self.assertTrue(m["nonterminal_backlog_grew"])
+
     def test_invalid_schema_or_budget_fails_closed(self):
         with self.assertRaises(ValueError):
             mod.safe_prev({"schema":"wrong","rows":[]})
