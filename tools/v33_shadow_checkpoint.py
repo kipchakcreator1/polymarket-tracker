@@ -200,8 +200,13 @@ def build_checkpoint(previous, state, report, now=None,
     capacity_per_hour = runs_per_hour*max_checks if runs_per_hour else None
     ring_rate_proxy = (round(len(sent)*3600/ring_span, 2)
                        if ring_span and ring_span > 0 else None)
+    # The 10-minute scheduler needs an interval rate; do not infer it
+    # from rapid code-push canaries with <5 minutes of observations.
     observed_interval_rate = (round(new_keys*3600/elapsed, 2)
-                              if elapsed and elapsed >= 1800 else None)
+                              if elapsed and elapsed >= 300 else None)
+    old_backlog = (old.get("meta") or {}).get("not_yet_terminal")
+    backlog_delta = (unverified-old_backlog if
+                     isinstance(old_backlog, int) else None)
     meta = {
         "completed_runs": int((old.get("meta") or {}).get("completed_runs") or 0)+1,
         "source_truth_updated_at": report.get("updated_at"),
@@ -221,6 +226,9 @@ def build_checkpoint(previous, state, report, now=None,
         "newly_final_by_decision": dict(new_by_decision),
         "newly_final_with_original_quote": new_with_original_quote,
         "not_yet_terminal": unverified,
+        "nonterminal_backlog_change_from_previous_run": backlog_delta,
+        "nonterminal_backlog_grew": (
+            backlog_delta > 0 if backlog_delta is not None else None),
         "first_run_history_unknown": first_run_history_unknown,
         "ring_rate_proxy_per_hour_not_verified_arrival_rate": ring_rate_proxy,
         "actual_new_quote_keys_per_hour_since_checkpoint": observed_interval_rate,
