@@ -53,6 +53,14 @@ jobs:
           python -m unittest discover -s tests -p 'test_v33_research_shadow_queue.py' -v
           echo "Snapshot SHA: $(git -C v33-snapshot rev-parse HEAD)"
           python tools/v33_research_shadow_queue.py
+      - name: Independently validate quoted-price sports copyability and filter evidence
+        env:
+          PYTHONPATH: .
+          V33_COPY_AUDIT_INPUT_DIR: v33-snapshot
+        run: |
+          python -m py_compile tools/v33_copyability_validation.py tests/test_v33_copyability_validation.py
+          python -m unittest discover -s tests -p 'test_v33_copyability_validation.py' -v
+          python tools/v33_copyability_validation.py
       - name: Upload public aggregate diagnostic (no Telegram or wallet keys)
         if: always()
         uses: actions/upload-artifact@v4
@@ -61,5 +69,6 @@ jobs:
           path: |
             artifacts/v33-risk-api-audit.json
             artifacts/v33-shadow-wallet-queue.json
+            artifacts/v33-copyability-gate.json
           if-no-files-found: ignore
           retention-days: 7
