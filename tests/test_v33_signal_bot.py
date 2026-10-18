@@ -1584,6 +1584,93 @@ class BotTests(unittest.TestCase):
         send.assert_not_called()
         self.assertIn(COND, state["conflicting_markets"])
 
+    def test_checked_caches_survive_post_poll_clock_skew(self):
+        """A genuine check at t+20 must not be purged by poll-start t."""
+        current = NOW
+        late = NOW + 20
+        live = {
+            W: {"checked_at":late,"confirmed_risk_veto":
+                "major_unredeemed_loss_cluster_90d"},
+        }
+        allowed={W}
+        saved = bot.keep_checked_cache(live,current,3600,allowed)
+        self.assertIn(W,saved)
+        self.assertEqual(bot.keep_checked_cache(live,current,600,allowed),live)
+        self.assertEqual(bot.keep_checked_cache(live,current,900),live)
+        # Every individual gate still enforces its existing TTL and risk veto.
+        state=bot.blank_state()
+        state["recent_form_cache"]=saved
+        with mock.patch.object(bot,"fetch_recent_results",
+                               side_effect=AssertionError("should reuse risk veto")):
+            self.assertEqual(
+                bot.recent_form_reason(state,W,NOW+60),
+                "major_unredeemed_loss_cluster_90d")
+
+    def test_checked_cache_prunes_stale_unselected_and_gross_future(self):
+        data={
+            W:{"checked_at":NOW-4000},
+            "bad-future":{"checked_at":NOW+bot.EVIDENCE_FUTURE_SKEW_SECONDS+1},
+            "just-checked":{"checked_at":NOW+15},
+            "missing":{"last_event_at":NOW},
+            "not-dict":42,
+        }
+        allowed={W,"bad-future","just-checked","missing","not-dict"}
+        self.assertEqual(list(bot.keep_checked_cache(
+            data,NOW,3600,allowed)),["just-checked"])
+        self.assertEqual(bot.keep_checked_cache(
+            {"x":{"checked_at":NOW+1}},NOW,600,{"different"}),{})
+        with self.assertRaises(ValueError):
+            bot.keep_checked_cache([],NOW,600)
+
+    def test_main_persists_all_four_caches_created_after_poll_started(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        wallet_meta={"wallet":W,"closed":40,"profitable_closed_rate":.80,
+                     "realized_closed_pnl":500,"profit_factor":2.}
+        with tempfile.TemporaryDirectory() as dirname:
+            input_path=Path(dirname)/"wallets.json"
+            output_path=Path(dirname)/"state.json"
+            input_path.write_text(json.dumps({
+                "schema":"v33_wallet_shortlist_1","observed_at":NOW,
+                "candidate_count":1,"shortlist":[wallet_meta]}))
+            def inject_verified_cache(state,selected,now,*,clock=None):
+                future = now + 17
+                state["recent_form_cache"][W]={
+                    "checked_at":future,
+                    "confirmed_risk_veto":"major_unredeemed_loss_cluster_90d"}
+                state["active_form_cache"][W]={
+                    "checked_at":future,"red_fraction":.9,"unrealized_roi":-.9}
+                state["politics_cache"][COND]={
+                    "checked_at":future,"political":False}
+                state["market_focus_cache"][COND]={
+                    "checked_at":future,"focus":"sports_btc",
+                    "sports":True,"game_start":NOW+300,"end":NOW+300}
+                return 0
+            env={"TELEGRAM_V31_BOT_TOKEN":"old-token",
+                 "TELEGRAM_V32_BOT_TOKEN":"other-old-token",
+                 "TELEGRAM_V33_BOT_TOKEN":"new-token",
+                 "TELEGRAM_CHAT_ID":"123456789",
+                 "V33_OPEN_ALERTS_ENABLED":"0"}
+            with mock.patch.object(bot,"SHORTLIST",input_path), \
+                 mock.patch.object(bot,"STATE",output_path), \
+                 mock.patch.dict(bot.os.environ,env), \
+                 mock.patch.object(bot,"CONFLICT_TELEGRAM_ENABLED",False), \
+                 mock.patch.object(bot.v32,"get_wallet_trades",return_value=[]), \
+                 mock.patch.object(bot,"deliver",side_effect=inject_verified_cache), \
+                 mock.patch.object(bot.v2,"send_telegram",return_value=1), \
+                 mock.patch.object(bot.time,"time",return_value=NOW):
+                bot.main()
+            saved=json.loads(output_path.read_text())
+            for key in ("recent_form_cache","active_form_cache",
+                        "politics_cache","market_focus_cache"):
+                self.assertEqual(len(saved[key]),1,key)
+            self.assertEqual(saved["last_run"]["cached_risk_wallets"],1)
+            self.assertEqual(saved["last_run"]["cached_portfolio_wallets"],1)
+            self.assertEqual(saved["last_run"]["cached_sports_market_meta"],1)
+            self.assertEqual(saved["last_run"]["cached_politics_market_meta"],1)
+
+
 
 if __name__ == "__main__":
     unittest.main()
