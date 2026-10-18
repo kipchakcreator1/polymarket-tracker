@@ -73,19 +73,27 @@ jobs:
         run: |
           python -m py_compile tools/v33_pagination_capacity_benchmark.py tests/test_v33_pagination_capacity_benchmark.py
           python -m unittest discover -s tests -p 'test_v33_pagination_capacity_benchmark.py' -v
+      # Heavy public probes are OPT-IN. Trigger with commit marker
+      # [capacity-canary] or explicit workflow dispatch; routine audit pushes
+      # must never repeatedly load the API shared with the live 300 wallets.
       - name: Up to 60 research wallets - 48 recent one-hour, 12 high-volume six-hour paginated audits
+        if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[capacity-canary]') }}
         continue-on-error: true
         env:
           PYTHONPATH: .
         run: python -u tools/v33_pagination_capacity_benchmark.py
-      - name: Verify capped heavy wallets with read-only deeper pagination
-        continue-on-error: true
+      - name: Offline tests for deeper heavy wallet pagination
         env:
           PYTHONPATH: .
         run: |
           python -m py_compile tools/v33_heavy_wallet_deep_paging.py tests/test_v33_heavy_wallet_deep_paging.py
           python -m unittest discover -s tests -p 'test_v33_heavy_wallet_deep_paging.py' -v
-          python tools/v33_heavy_wallet_deep_paging.py
+      - name: Verify capped heavy wallets with read-only deeper pagination
+        if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[capacity-canary]') }}
+        continue-on-error: true
+        env:
+          PYTHONPATH: .
+        run: python tools/v33_heavy_wallet_deep_paging.py
       - name: Test durable rejected quote archival and old-first resolution audit
         env:
           PYTHONPATH: .
