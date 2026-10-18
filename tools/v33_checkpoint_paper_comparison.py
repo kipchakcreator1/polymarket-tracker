@@ -141,6 +141,65 @@ def group_summary(rows):
     }
 
 
+def quote_price_time_support(unique_rows, *, max_price_gap=.05,
+                             max_time_gap_seconds=6*3600):
+    """Descriptive overlap only, not randomized/matched causal evaluation.
+
+    One-to-one nearest historical quoted blocked condition for each sent quote.
+    A common odds/time neighborhood is NOT the same league, independent match,
+    wallet, market, or counterfactual trade. All ROI deltas remain NULL.
+    """
+    sent = sorted((x for x in unique_rows if x["cohort"]=="telegram_sent"),
+                  key=lambda x:(x["quoted_at"],x["market"]))
+    blocked = sorted((x for x in unique_rows if x["cohort"]=="blocked_recent"),
+                     key=lambda x:(x["quoted_at"],x["market"]))
+    unmatched = {x["market"]:x for x in blocked}
+    pairs=[]
+    for a in sent:
+        eligible = [b for b in unmatched.values()
+                    if abs(a["ask"]-b["ask"]) <= max_price_gap+1e-10
+                    and abs(a["quoted_at"]-b["quoted_at"]) <= max_time_gap_seconds
+                    and a["market"] != b["market"]]
+        if not eligible:
+            continue
+        b=min(eligible,key=lambda x:(
+            abs(a["quoted_at"]-x["quoted_at"]),
+            abs(a["ask"]-x["ask"]), x["market"]))
+        unmatched.pop(b["market"])
+        pairs.append((a,b))
+    sent_matched=[a for a,b in pairs]
+    blocked_matched=[b for a,b in pairs]
+    counts = {"telegram_sent":group_summary(sent_matched),
+              "blocked_recent":group_summary(blocked_matched)}
+    # These are informative quote+outcome summaries, NOT effect sizes.
+    return {
+        "scope": "same_ask_neighborhood_and_6h_only_not_causal_pairing",
+        "max_ask_gap": max_price_gap,
+        "max_time_gap_seconds": max_time_gap_seconds,
+        "sent_market_conditions_available":len(sent),
+        "blocked_market_conditions_available":len(blocked),
+        "one_to_one_pairs":len(pairs),
+        "sent_unpaired":len(sent)-len(pairs),
+        "blocked_unpaired":len(blocked)-len(pairs),
+        "max_pairing_quote_time_gap_seconds":(
+            max(abs(a["quoted_at"]-b["quoted_at"]) for a,b in pairs)
+            if pairs else None),
+        "max_pairing_ask_gap":(
+            round(max(abs(a["ask"]-b["ask"]) for a,b in pairs),4)
+            if pairs else None),
+        "sampled_pair_group_outcomes": counts,
+        "same_league_verified": False,
+        "same_sport_event_verified": False,
+        "comparable_selection_probability_verified": False,
+        "conditional_odds_time_difference_in_roi": None,
+        "causal_filter_effect": None,
+        "eligible_for_changing_live_gates": False,
+        "warning": ("Pairs represent shared quote-price/time support only; "
+                    "they are different conditions, can be different sports, "
+                    "not balanced by league, outcome maturity or signal flow."),
+    }
+
+
 def build_report(checkpoint, forward):
     if not isinstance(checkpoint, dict) or checkpoint.get("schema") != (
             "v33_durable_shadow_checkpoint_1"):
@@ -175,6 +234,7 @@ def build_report(checkpoint, forward):
         for cohort in ("blocked_recent","telegram_sent")}
     sample_enough=all(
         v["descriptive_sample_30plus_market_conditions"] for v in by.values())
+    overlap=quote_price_time_support(unique)
     return {
         "schema":"v33_archived_quote_two_cohort_paper_1",
         "checkpoint_completed_runs":(checkpoint.get("meta") or {}).get("completed_runs"),
@@ -184,6 +244,7 @@ def build_report(checkpoint, forward):
         "market_condition_duplicates_excluded":duplicated,
         "exclusion_reasons":dict(rejected),
         "by_cohort":by,
+        "quote_price_time_support":overlap,
         "both_descriptive_samples_reach_30":sample_enough,
         "data_is_not_matched_by_event_or_time":True,
         "market_condition_is_not_independent_sport_event":True,
