@@ -33,7 +33,7 @@ def inputs(live_quotes=None, previous_truth=None):
 class DurableCheckpointTests(unittest.TestCase):
     def test_two_runs_persist_quote_then_resolve_after_ring_drops_it(self):
         state, report = inputs({K: live()})
-        with mock.patch.object(truth.time, "time", return_value=NOW), \\
+        with mock.patch.object(truth.time, "time", return_value=NOW), \
              mock.patch.object(truth, "classify",
                                return_value=("unknown_resolution_pending", None)):
             one = mod.build_checkpoint(None, state, report, now=NOW, max_checks=1)
@@ -45,7 +45,7 @@ class DurableCheckpointTests(unittest.TestCase):
         # The public signal ring evicts the bet. Keep its first observed ask.
         later = NOW + 3700
         empty_state, empty_truth = inputs({})
-        with mock.patch.object(truth.time, "time", return_value=later), \\
+        with mock.patch.object(truth.time, "time", return_value=later), \
              mock.patch.object(truth, "classify", return_value=("win", NOW+3500)):
             two = mod.build_checkpoint(one, empty_state, empty_truth,
                                        now=later, max_checks=1)
@@ -58,7 +58,7 @@ class DurableCheckpointTests(unittest.TestCase):
         self.assertAlmostEqual(two["rows"][0]["paper_hold_pnl_no_fees"], 5.)
 
         later2 = later + 50
-        with mock.patch.object(truth.time, "time", return_value=later2), \\
+        with mock.patch.object(truth.time, "time", return_value=later2), \
              mock.patch.object(truth, "classify") as classifier:
             three = mod.build_checkpoint(two, empty_state, empty_truth,
                                          now=later2, max_checks=1)
@@ -76,7 +76,7 @@ class DurableCheckpointTests(unittest.TestCase):
         _,ignored,collisions=mod.merge_rows(old["rows"],[historical],NOW)
         self.assertEqual(len(collisions),1)
         self.assertEqual(ignored["capacity_eviction"],0)
-        with mock.patch.object(truth.time,"time",return_value=NOW), \\
+        with mock.patch.object(truth.time,"time",return_value=NOW), \
              mock.patch.object(truth,"classify") as classifier:
             checkpoint=mod.build_checkpoint(old,*inputs({},[historical]),
                                             now=NOW,max_checks=1)
@@ -103,7 +103,7 @@ class DurableCheckpointTests(unittest.TestCase):
         })
         old={"schema":mod.SCHEMA,"last_saved_at":NOW-1000,
              "rows":[],"meta":{"completed_runs":1}}
-        with mock.patch.object(truth.time,"time",return_value=NOW), \\
+        with mock.patch.object(truth.time,"time",return_value=NOW), \
              mock.patch.object(truth,"classify",
                                return_value=("unknown_resolution_pending",None)):
             checkpoint=mod.build_checkpoint(old,state,report,now=NOW,max_checks=1)
@@ -113,7 +113,7 @@ class DurableCheckpointTests(unittest.TestCase):
 
     def test_undecided_sample_never_fabricates_copy_roi(self):
         state,report=inputs({K:live()})
-        with mock.patch.object(truth.time,"time",return_value=NOW), \\
+        with mock.patch.object(truth.time,"time",return_value=NOW), \
              mock.patch.object(truth,"classify",
                                return_value=("unknown_resolution_pending",None)):
             checkpoint=mod.build_checkpoint(None,state,report,now=NOW,max_checks=1)
@@ -134,7 +134,7 @@ class DurableCheckpointTests(unittest.TestCase):
         row={"wallet":W,"condition":C,"token_id":T,"alert_at":NOW-300,
              "result":"not_checked","shadow_decision":"blocked_recent"}
         state,report=inputs({},[row])
-        with mock.patch.object(truth.time,"time",return_value=NOW), \\
+        with mock.patch.object(truth.time,"time",return_value=NOW), \
              mock.patch.object(truth,"classify",return_value=("win",NOW)):
             checkpoint=mod.build_checkpoint(None,state,report,now=NOW,max_checks=1)
         result=checkpoint["rows"][0]
