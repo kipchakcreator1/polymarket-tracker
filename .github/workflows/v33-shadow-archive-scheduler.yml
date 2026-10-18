@@ -74,7 +74,25 @@ jobs:
         env:
           PYTHONPATH: .
           V33_COMPARE_SOURCE_DIR: v33-snapshot
-        run: python tools/v33_checkpoint_paper_comparison.py
+        run: |
+          python tools/v33_checkpoint_paper_comparison.py
+          python - <<'PY'
+          import json, os, pathlib
+          report=json.loads(pathlib.Path("artifacts/v33-rejected-vs-sent-paper.json").read_text())
+          support=report["quote_price_time_support"]
+          maturity=report["original_quote_outcome_maturity_by_time_odds"]
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("\n## Odds/time support and settlement censoring\n")
+              out.write(f"- Sent/rejected pairs within 5c and 6h: {support['one_to_one_pairs']}\\n")
+              out.write(f"- Unpaired sent quotes: {support['sent_unpaired']}\\n")
+              out.write(f"- Unpaired rejected quotes: {support['blocked_unpaired']}\\n")
+              for cohort in ("telegram_sent","blocked_recent"):
+                  row=maturity["cohorts"][cohort]
+                  out.write(f"- {cohort} saved quote conditions: {row['unique_quote_conditions']}; "
+                            f"final: {row['final_outcomes_in_quote_journal']}; "
+                            f"unknown/not-final: {row['not_final_or_unverified_in_quote_journal']}\\n")
+              out.write("- No same-league guarantee, causal effect estimate, or real fill ROI.\\n")
+          PY
       - name: Commit only archival checkpoint to audit branch
         run: |
           git config user.name "github-actions[bot]"
