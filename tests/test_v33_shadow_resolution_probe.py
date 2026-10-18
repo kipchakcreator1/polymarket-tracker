@@ -11,7 +11,8 @@ K=W+"|"+C+"|123"
 
 class ShadowProbeTests(unittest.TestCase):
     def test_newly_classified_outcome_and_quote_are_reported_separately(self):
-        state={"version":33,"shadow_evidence":{K:{"quoted_at":1000}}}
+        state={"version":33,"shadow_evidence":{K:{"quoted_at":1000,
+                                                       "decision":"blocked_recent"}}}
         truth={"schema":"v33_true_sports_audit_1","updated_at":1010,
                "shadows":{"rows":[]}}
         qualified=[{"wallet":W,"condition":C,"token_id":"123",
@@ -22,6 +23,9 @@ class ShadowProbeTests(unittest.TestCase):
         self.assertEqual(f.call_args.kwargs["max_checks"],10)
         self.assertTrue(f.call_args.kwargs["historical_shadow"])
         self.assertEqual(data["newly_verified_resolved_loss"],1)
+        self.assertEqual(data["newly_verified_by_observed_shadow_decision"],
+                         {"blocked_recent_loss":1})
+        self.assertEqual(data["newly_verified_with_original_quote"],1)
         self.assertEqual(data["rows_with_original_book_quote"],1)
         self.assertTrue(data["nothing_written_to_source"])
         self.assertEqual(data["orders_placed"],0)
