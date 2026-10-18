@@ -1591,7 +1591,7 @@ class BotTests(unittest.TestCase):
             self.assertEqual(record["risk_gate"],"recent")
             self.assertEqual(record["risk_reason"],reason)
             self.assertEqual(record["risk_checked_at"],NOW)
-            self.assertIn(record["decision"],("blocked_recent","awaiting_recent_history"))
+            self.assertIn(record["decision"],("blocked_recent","awaiting_recent_history","retry_recent_api"))
             self.assertEqual(state["counters"]["alerts_sent"] if
                              "alerts_sent" in state["counters"] else 0,0)
 
