@@ -27,6 +27,32 @@
 
 The branch also already contains `research/v33_evidence_rank.json` (source updated at 2026-10-18 UTC). It lists **169 wallets audited**, **0 historical-audit-ready**, **0 forward-paper-evaluable**, **0 live-approved**. These are report-status counts, not proof that no profitable sports signal exists. It means the present evidence does not support automatically replacing the wallet shortlist with an apparently profitable copy-trader ranking. The separate `research/v33_wallet_copy_cohort.json` explicitly labels its ROI estimates price proxies, not executable net follower returns, and likewise approves 0 wallets for live BUY.
 
+## New research-only shadow top-300 validation queue
+
+A **separate** program `tools/v33_research_shadow_queue.py` joins only the following read-only inputs:
+
+- `v33_wallet_shortlist.json` — legacy ranking of profitable CLOSED sample (not predictive, not lifetime economics).
+- `v33_evidence_rank.json` — distinct verified sports event observations, certified-history flags, ambiguous outcomes, severe unredeemed loss inventory.
+- `v33_wallet_copy_cohort.json` — selected historical price-proxy lag tests, *not* executable prices or copy PnL.
+- `v33_forward_net_paper.json` — strictly prospective $5 book-quoted paper holds, fees modeled, not filled; duplicated condition observations ignored.
+- `artifacts/v33-risk-api-audit.json` — bounded public v2 risk pages, with pagination/zero-timestamp uncertainty explicitly retained.
+- `v33_signal_state.json` — read-only last saved 300 wallet cursor addresses for a historical overlap comparison, **not a real-time exact inventory**.
+
+The GitHub Action checks out the freshest available `v3.3-wallet-research` branch into `v33-snapshot` read-only, without replacing any production executable or modifying the live monitoring state. It writes the research JSON **only to a downloadable CI artifact**, not back to the production shortlist. It remains an **audit priority queue, not a new top-rated wallet list or alert allowlist**. Severe loss evidence raises audit priority; win rate or historic PnL do not buy a higher quality status.
+
+[Successful fresh-snapshot audit CI run](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39104692004): 108 BUY/risk, 8 OPEN, 5 API-diagnostic, 9 shadow-queue offline tests passed (**130/130**). The sampled research snapshot was commit `6a2055aa79ed3197a2121d06272d8efb83d08e3d`. Data collection timestamps span about **75,567 seconds (~21 hours)**, so this is *not* a single cutoff-time backtest.
+
+**Observed output:** 359 unique pool wallets; 300 research queue entries; 190 `HISTORY_REVIEW`; 110 `RISK_REVIEW`; 291/300 overlapping the independently reconstructed old shortlist; 287/300 overlapping last saved runtime wallet cursors; 160 old shortlist entries had a sports audit; **0 complete historical sports audits** and **0 wallet datasets with at least 30 distinct settled book-quoted conditions in this queue**; **0 live approved**. Not enough outcome and execution evidence to choose a net-profitable copy-trader.
+
+To reproduce locally or in CI, run:
+
+```bash
+PYTHONPATH=. python -m unittest discover -s tests -p 'test_v33_research_shadow_queue.py' -v
+PYTHONPATH=. V33_SHADOW_INPUT_DIR=v33-snapshot V33_SHADOW_INPUT_REF=v3.3-wallet-research python tools/v33_research_shadow_queue.py
+```
+
+The GitHub Actions run stores `artifacts/v33-shadow-wallet-queue.json` and `artifacts/v33-risk-api-audit.json` in artifact `v33-audit-risk-diagnostics` with seven-day retention. No trade orders or Telegram deliveries have occurred.
+
 ## Still unresolved / next gate
 
 - The old universe shortlist still uses up to 100 **legacy closed positions** to rank and admit 300 wallets. It is not a complete economic or predictive ranking. Keep this behavior unchanged in production pending a real, event-level and cash-flow-reconciled replacement.
