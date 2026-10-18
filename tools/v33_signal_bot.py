@@ -230,6 +230,32 @@ def keep_forward_evidence(records, now, timestamp, days=45, limit=None):
     return keep
 
 
+def keep_checked_cache(records, now, max_age, allowed_keys=None):
+    """Retain verified risk/metadata checks recorded after poll start.
+
+    main() starts with a snapshot of time, but deliver() obtains a later
+    timestamp after public API and orderbook reads. The previous strict
+    0 <= now - checked_at check silently erased valid 60s/180s/900s caches.
+    Do NOT extend freshness inside any risk gate; their own strict TTL and
+    fail-closed data checks remain unchanged.
+    """
+    if not isinstance(records, dict):
+        raise ValueError("Invalid checked cache")
+    kept = {}
+    for key, item in records.items():
+        if allowed_keys is not None and key not in allowed_keys:
+            continue
+        if not isinstance(item, dict):
+            continue
+        try:
+            age = int(now) - int(item.get("checked_at") or 0)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if -EVIDENCE_FUTURE_SKEW_SECONDS <= age <= max_age:
+            kept[key] = item
+    return kept
+
+
 def save_state(state):
     STATE.parent.mkdir(parents=True, exist_ok=True)
     temp = STATE.with_suffix(".tmp")
@@ -1350,28 +1376,20 @@ def main():
                         if now - int(v["last"]) <= MAX_AGE}
     state["cursors"] = {k: v for k, v in state["cursors"].items()
                         if k in selected}
-    state["recent_form_cache"] = {
-        k: v for k, v in state["recent_form_cache"].items()
-        if k in selected and isinstance(v, dict)
-        and 0 <= now - int(v.get("checked_at") or 0) <= 3600}
-    state["active_form_cache"] = {
-        k: v for k, v in state["active_form_cache"].items()
-        if k in selected and isinstance(v, dict)
-        and 0 <= now - int(v.get("checked_at") or 0) <= 600}
+    state["recent_form_cache"] = keep_checked_cache(
+        state["recent_form_cache"], now, 3600, selected)
+    state["active_form_cache"] = keep_checked_cache(
+        state["active_form_cache"], now, 600, selected)
     state["conflicting_markets"] = {
         k: v for k, v in state["conflicting_markets"].items()
         if 0 <= now - int(v) <= MAX_AGE}
     state["conflict_alerts"] = {
         k: v for k, v in state["conflict_alerts"].items()
         if 0 <= now - int(v) <= 86400}
-    state["market_focus_cache"] = {
-        k: v for k, v in state["market_focus_cache"].items()
-        if isinstance(v, dict) and
-        0 <= now - int(v.get("checked_at") or 0) <= MARKET_FOCUS_CACHE_SECONDS}
-    state["politics_cache"] = {
-        k: v for k, v in state["politics_cache"].items()
-        if isinstance(v, dict) and
-        0 <= now - int(v.get("checked_at") or 0) <= POLITICS_CACHE_SECONDS}
+    state["market_focus_cache"] = keep_checked_cache(
+        state["market_focus_cache"], now, MARKET_FOCUS_CACHE_SECONDS)
+    state["politics_cache"] = keep_checked_cache(
+        state["politics_cache"], now, POLITICS_CACHE_SECONDS)
     suppression_delta = {
         k: int(n) - int(counters_before.get(k, 0))
         for k, n in state["counters"].items()
@@ -1391,6 +1409,10 @@ def main():
                          "open_position_wallet_cursor": state.get("open_wallet_cursor", 0),
                          "conflict_alerts": conflicts,
                          "request_errors": failures, "poll_gaps": gaps,
+                         "cached_risk_wallets": len(state["recent_form_cache"]),
+                         "cached_portfolio_wallets": len(state["active_form_cache"]),
+                         "cached_sports_market_meta": len(state["market_focus_cache"]),
+                         "cached_politics_market_meta": len(state["politics_cache"]),
                          "this_poll": suppression_delta,
                          "suppression_totals": state["counters"]}
     save_state(state)
