@@ -113,6 +113,22 @@ class DurableCheckpointTests(unittest.TestCase):
         self.assertTrue(checkpoint["meta"]["coverage_breach_or_unknown"])
         self.assertEqual(checkpoint["meta"]["observed_new_quote_keys"],2)
 
+    def test_existing_rolling_ring_keys_are_not_all_reported_as_new(self):
+        old={"schema":mod.SCHEMA,"last_saved_at":NOW-800,
+             "rows":[{"wallet":W,"condition":C,"token_id":T,
+                      "result":"unknown_resolution_pending",
+                      "checked_at":NOW-40, "alert_at":NOW-50,
+                      "shadow_decision":"blocked_recent"}],
+             "meta":{"completed_runs":1}}
+        state,report=inputs({K:live()})
+        with mock.patch.object(truth.time,"time",return_value=NOW), \
+             mock.patch.object(truth,"classify",
+                               return_value=("unknown_resolution_pending",None)):
+            out=mod.build_checkpoint(old,state,report,now=NOW,max_checks=1)
+        self.assertEqual(out["meta"]["observed_new_quote_keys"],0)
+        self.assertEqual(out["meta"]["archived_rows"],1)
+        self.assertEqual(out["meta"]["completed_runs"],2)
+
     def test_undecided_sample_never_fabricates_copy_roi(self):
         state,report=inputs({K:live()})
         with mock.patch.object(truth.time,"time",return_value=NOW), \
