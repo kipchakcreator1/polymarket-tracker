@@ -1,8 +1,6 @@
 {
-  "cash_usd": "0.07",
-  "history": [],
-  "mode": "PAPER_ONLY",
-  "positions": [
+  "cash_usd": "0.14",
+  "history": [
     {
       "baseline": "PRICE_ONLY",
       "close_time": "2026-10-20T17:00:00+00:00",
@@ -10,16 +8,38 @@
       "entry_time": "2026-10-14T05:41:03.605467+00:00",
       "fee_estimated_usd": "0.01",
       "independent_probability": null,
+      "payout_usd": "4.00",
+      "price": "0.9800",
+      "qty": 4,
+      "realized_pnl_usd": "0.07",
+      "result": "yes",
+      "settled_at": "2026-10-18T17:51:49.291697+00:00",
+      "side": "yes",
+      "ticker": "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4",
+      "title": "New York G over 3.5 points scored",
+      "won": true
+    }
+  ],
+  "mode": "PAPER_ONLY",
+  "positions": [
+    {
+      "baseline": "PRICE_ONLY",
+      "close_time": "2026-10-22T15:00:00+00:00",
+      "cost_usd": "3.93",
+      "entry_time": "2026-10-18T17:51:49.063605+00:00",
+      "fee_estimated_usd": "0.01",
+      "independent_probability": null,
       "price": "0.9800",
       "qty": 4,
       "side": "yes",
-      "ticker": "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4",
-      "title": "New York G over 3.5 points scored"
+      "ticker": "KXSAUDIPLTOTAL-26OCT20DIRRIY-1",
+      "title": "Will over 0.5 goals be scored?"
     }
   ],
   "schema": 1,
   "seen": [
-    "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4:yes"
+    "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4:yes",
+    "KXSAUDIPLTOTAL-26OCT20DIRRIY-1:yes"
   ],
   "starting_usd": "4.00"
 }
