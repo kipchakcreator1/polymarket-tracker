@@ -106,6 +106,7 @@ jobs:
           V33_MAX_MAJOR_LOSSES_90D: '-1'
           # Allow ordinary losing streaks; keep ROI and portfolio checks.
           V33_MAX_RECENT_LOSS_STREAK: '3'
+          V33_RECENT_API_ERROR_COOLDOWN_SECONDS: '120'
           # Never notify on political markets (Gamma event tags + title guard).
           V33_EXCLUDE_POLITICS: '1'
           V33_MAX_PRICE_RISE: '0.05'
