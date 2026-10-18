@@ -1,0 +1,91 @@
+name: v3.3 Shadow Archive Research Scheduler (NO TELEGRAM)
+# Research-only, read-only Polymarket public data. Checkout of the running
+# bot's research branch is read-only. Persist ONLY to isolated audit branch.
+# The existing v3.3 Telegram and trading workflows are not modified.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v33-shadow-archive-scheduler.yml']
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: v33-shadow-checkpoint-archive
+  cancel-in-progress: false
+jobs:
+  archival:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout audit code and existing checkpoint, not the live bot
+        uses: actions/checkout@v4
+        with:
+          ref: audit/v33-risk-gate-20261017
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fail closed if archive/tests are broken
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_shadow_checkpoint.py tests/test_v33_shadow_checkpoint.py
+          python -m unittest discover -s tests -p 'test_v33_shadow_checkpoint.py' -v
+          python -m unittest discover -s tests -p 'test_v33_result_audit.py' -v
+      - name: Snapshot v3.3 live research state READ ONLY
+        uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+          path: v33-snapshot
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Retain and classify at most 25 public outcomes
+        env:
+          PYTHONPATH: .
+          V33_CHECKPOINT_SOURCE_DIR: v33-snapshot
+          V33_SHADOW_MAX_API_CHECKS: '25'
+          V33_SHADOW_SCHEDULE_RUNS_PER_HOUR: '6'
+        run: |
+          python -u tools/v33_shadow_checkpoint.py
+          python - <<'PY'
+          import json, pathlib, os
+          data=json.loads(pathlib.Path("research/v33-shadow-outcome-checkpoint.json").read_text())
+          metrics=data["meta"]
+          dst=pathlib.Path("artifacts/v33-shadow-checkpoint-health.json")
+          dst.parent.mkdir(parents=True,exist_ok=True)
+          dst.write_text(json.dumps(metrics,indent=2,sort_keys=True)+"\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("## Isolated public sports shadow archive (no orders)\n")
+              for key in ("completed_runs","archived_rows","archived_quotes_at_original_observation",
+                          "newly_final_by_decision","not_yet_terminal",
+                          "minimum_runs_to_recheck_current_backlog",
+                          "ring_rate_proxy_per_hour_not_verified_arrival_rate",
+                          "configured_max_checks_per_hour",
+                          "risk_of_unobserved_ring_evictions","coverage_breach_or_unknown"):
+                  out.write(f"- {key}: {metrics.get(key)}\n")
+              out.write("- The saved checkpoint is NOT a live trading strategy.\n")
+          PY
+      - name: Commit only archival checkpoint to audit branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- research/v33-shadow-outcome-checkpoint.json
+          if git diff --cached --quiet; then
+            echo "No new checkpoint data"
+          else
+            git commit -m "research: scheduled shadow checkpoint [skip ci]"
+            git fetch origin audit/v33-risk-gate-20261017
+            git rebase origin/audit/v33-risk-gate-20261017
+            git push origin HEAD:refs/heads/audit/v33-risk-gate-20261017
+          fi
+      - name: Publish only aggregate health artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v33-shadow-hourly-health
+          path: artifacts/v33-shadow-checkpoint-health.json
+          if-no-files-found: ignore
+          retention-days: 14
