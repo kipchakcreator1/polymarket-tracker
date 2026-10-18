@@ -1,0 +1,21 @@
+# 2026-10-18 — actual post-350 pilot health, cache recovery and sports veto attribution
+
+## Production run health verified (read-only)
+
+At [aggregate audit #39124396806](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39124396806), the persisted `v3.3-wallet-research` state was read by a GitHub Actions runner because the file now exceeds 1 MiB and a direct integration file-read returns an empty response. The snapshot file's last-change commit epoch was `1792323742`, approximately 90 seconds prior to the audit. The most recent saved v3.3 poll reported **346 monitored wallets**, **0 API request errors**, **0 poll gaps**, **8 new fills across all topics**, **2 sports source BUY passing book checks**, and **2 vetoes for major unredeemed-loss clusters**. These are poll counters, not unique independent sports bets.
+
+The previous production code silently discarded *all four* valuable transient caches when checks occurred after the initial per-poll timestamp. [PR #5](https://github.com/kipchakcreator1/polymarket-tracker/pull/5) is now confirmed **functioning in a new production process**, not merely merged: `last_run` included saved risk cache **64**, active portfolio **1**, Gamma sports focus **145**, Gamma political metadata **35**; independent inspection of those JSON maps found exactly the same counts. Two OPEN dedupe keys remained. This confirms preservation across the save barrier, **not** that every API risk decision is correct or that more profitable alerts will follow.
+
+The current shortlist changes asynchronously as the large research job refreshes discovery. The reconstructed latest `old_300` had 300 keys, its top-350 extension 42 extra eligible keys in that snapshot; the saved running monitor still had 346 cursor keys. **This is a snapshot-membership mismatch**, not evidence that the running process silently dropped four wallets. A subsequent report explicitly records `runtime_wallets_outside_current_reconstructed_shortlist` and the reverse difference. The phrase '46 extra' is correct only for the *earlier* cohort snapshot; future per-cohort stats MUST state the reconstruction time and mismatch.
+
+## Real filter-decision evidence, not guesses
+
+Recent live evidence for the current reconstructed 42 extra wallets had **10 book-quoted shadow observations in the prior hour**, vs **140** in the reconstructed core 300. The old ring has only `blocked_recent` / `sent_telegram` generic labels and **no per-quote exact risk reason**, so *none of those historical ten can be asserted as a proven loss-cluster rejection* in an individual-wallet analysis. The current poll's 2 aggregate loss-cluster vetoes cannot be unambiguously allocated to the new cohort or the old one.
+
+[PR #6](https://github.com/kipchakcreator1/polymarket-tracker/pull/6) has now merged a narrow additional diagnostic into the live `v3.3-wallet-research` code: each *future* after-book sports observation marked rejected by recent form, rejected by active portfolio, or successfully sent has `risk_gate`, `risk_reason`, `risk_checked_at` preserved. `recent_history_unverified` is recorded as *unknown*, never silently relabeled a demonstrated economic loss. The change generates no Telegram messages and does not loosen any existing risk check or qualify any wallet. It awaits a fresh runner checkout for source data; no backfill of prior per-quote reason is honest.
+
+The [full isolated audit #39124396806](https://github.com/kipchakcreator1/polymarket-tracker/actions/runs/39124396806) passed **245/245 offline regressions**, including evidence that a genuine major-loss veto, an unavailable history, and an active portfolio veto are distinguishable, while a successful send has a cleared risk reason.
+
+## Next acceptance gate
+
+Observe after next bot session refresh: `last_run.cached_risk_wallets` and `last_run.cached_sports_market_meta` should remain nonzero without errors, `shadow_evidence` must contain prospective `risk_reason` keys, and only then compare counts/settled outcomes of specific reasons for sport BUYs from added versus old wallets. The existing `v33_live_pilot_health.py` aggregates reasons by 1h/6h/24h and exposes unavoidable legacy unknown counts. None of these observations yet proves that a different recent-form threshold would have yielded positive real copy ROI.
