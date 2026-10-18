@@ -25,3 +25,22 @@ jobs:
         env:
           PYTHONPATH: .
         run: python -m unittest discover -s tests -p 'test_v33_open_positions.py' -v
+      - name: Test bounded wallet score and timestamp diagnosis
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_wallet_gate_shadow_audit.py tests/test_v33_wallet_gate_shadow_audit.py
+          python -m unittest discover -s tests -p 'test_v33_wallet_gate_shadow_audit.py' -v
+      - name: Public v2 timestamp and loss inventory smoke - research only
+        continue-on-error: true
+        env:
+          PYTHONPATH: .
+        run: python tools/v33_wallet_gate_shadow_audit.py --live
+      - name: Upload public aggregate diagnostic (no Telegram or wallet keys)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v33-audit-risk-diagnostics
+          path: artifacts/v33-risk-api-audit.json
+          if-no-files-found: ignore
+          retention-days: 7
