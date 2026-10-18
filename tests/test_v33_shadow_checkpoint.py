@@ -228,7 +228,7 @@ class DurableCheckpointTests(unittest.TestCase):
         for tamper in ({"quoted_at":NOW-100},
                        {"risk_checked_at":NOW+5000},
                        {"risk_gate":"active_portfolio"},
-                       {"risk_reason":"fake\\nresponse"}):
+                       {"risk_reason":"fake"+chr(10)+"response"}):
             row={"alert_at":NOW-50,"shadow_decision":"blocked_recent"}
             observed=live()
             observed.update({"decision":"blocked_recent","risk_gate":"recent",
