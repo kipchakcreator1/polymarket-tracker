@@ -95,7 +95,8 @@ MAX_FAST_TRADE_AGE = 75
 FAST_MARKET_END_BUFFER = 90
 RECENT_CACHE_SECONDS = 180
 RECENT_RISK_VETO_CACHE_SECONDS = 900
-RECENT_API_ERROR_COOLDOWN_SECONDS = 600  # no repeated costly failed pagination
+RECENT_API_ERROR_COOLDOWN_SECONDS = 600  # malformed/incomplete history: quarantine
+RECENT_TRANSIENT_RETRY_SECONDS = 60  # network/429: bounded retry while BUY is fresh
 # Four pages are sufficient only for wallets with <=1,000 settled losses.
 # Once a disqualifying number of losses is independently observed, fail
 # closed immediately instead of fetching pages that cannot change the veto.
@@ -261,7 +262,14 @@ def position_activity_timestamp(value, now):
     # minutes later, so compare to actual response-clock as well.
     latest = max(int(now), int(time.time())) + 120
     if stamp <= 0 or stamp > latest:
-        raise ValueError("Position activity timestamp invalid")
+        # Never coerce a future/unsupported unit into a valid position.
+        # Numeric diagnostics explain repeated failures without logging an
+        # entire wallet response (which would be expensive and sensitive).
+        unit = "milliseconds" if float(value) >= 1e12 else "seconds_or_unknown"
+        raise ValueError(
+            "Position activity timestamp invalid: "
+            f"unit={unit} raw={str(value)[:28]} normalized={stamp} "
+            f"latest_allowed={latest}")
     return stamp
 
 
@@ -430,8 +438,9 @@ def recent_form_reason(state, wallet, now):
             RECENT_RISK_VETO_CACHE_SECONDS):
         return value["confirmed_risk_veto"]
     if (isinstance(value, dict) and value.get("history_unverified") and
-            0 <= now-int(value.get("checked_at") or 0) <=
-            RECENT_API_ERROR_COOLDOWN_SECONDS):
+            now < int(value.get("retry_after") or
+                      (int(value.get("checked_at") or 0) +
+                       RECENT_API_ERROR_COOLDOWN_SECONDS))):
         return "recent_history_unverified"
     if not (isinstance(value, dict) and
             "profit_factor" in value and "net_pnl" in value and
@@ -445,13 +454,23 @@ def recent_form_reason(state, wallet, now):
             cache[wallet] = {"checked_at": now, "confirmed_risk_veto": exc.reason}
             return exc.reason
         except (RuntimeError, ValueError, TimeoutError, OSError) as exc:
-            # Unknown means BLOCK, not "no recent losses". Avoid thousands of
-            # expensive identical 1000+ row failures in the following polls.
+            # Unknown always BLOCKS an alert. Network/429/5xx can retry in
+            # about a minute while the original BUY remains actionable.
+            # Malformed timestamps and incomplete ledgers keep the longer
+            # cooldown; neither is ever treated as a clean wallet.
+            detail = str(exc)
+            transient = isinstance(exc, (TimeoutError, OSError)) or detail.startswith((
+                "API network issue", "API HTTP 429", "API HTTP 500",
+                "API HTTP 502", "API HTTP 503", "API HTTP 504"))
+            delay = (RECENT_TRANSIENT_RETRY_SECONDS if transient
+                     else RECENT_API_ERROR_COOLDOWN_SECONDS)
             cache[wallet] = {"checked_at": now, "history_unverified": True,
+                             "retry_after": now + delay,
                              "error_class": type(exc).__name__}
             mark(state, "recent_form_request_error")
+            mark(state, "recent_api_transient" if transient else "recent_api_incomplete")
             print("V33 RECENT FORM CACHED WARNING:", wallet[:12],
-                  type(exc).__name__, str(exc)[:110])
+                  type(exc).__name__, detail[:220])
             return "recent_history_unverified"
         value = recent_form(rows, now)
         value["checked_at"] = now
@@ -1157,8 +1176,21 @@ def deliver(state, selected, now, *, clock=None):
             continue  # retry while trade is fresh; never send unchecked
         if recent_reason:
             if topic == "sports":
-                state["shadow_evidence"][dedupe]["decision"] = "blocked_recent"
+                shadow = state["shadow_evidence"][dedupe]
+                shadow["decision"] = ("awaiting_recent_history" if
+                                      recent_reason == "recent_history_unverified"
+                                      else "blocked_recent")
+                shadow["risk_reason"] = recent_reason
             mark(state, recent_reason)
+            if (recent_reason == "recent_history_unverified" and
+                    checked_at - int(group["last"]) < MAX_AGE):
+                # Do not lose a fresh BUY merely because a transient API
+                # failure occurred. The next poll still MUST verify risk;
+                # the signal is never sent while UNKNOWN.
+                mark(state, "recent_history_retry_queued")
+                continue
+            if recent_reason == "recent_history_unverified":
+                mark(state, "recent_history_expired_unverified")
             del state["pending"][key]
             continue
         if topic:
@@ -1200,6 +1232,8 @@ def deliver(state, selected, now, *, clock=None):
             receipt = v2.send_telegram(message(group, selected[group["wallet"]],
                                      cand, quote, send_at, recent=recent,
                                      active=active))
+            if not isinstance(receipt, int) or isinstance(receipt, bool) or receipt <= 0:
+                raise RuntimeError("Telegram did not acknowledge BUY with message_id")
         except Exception as exc:
             mark(state, "telegram_error")
             print("V33 TELEGRAM WARNING:", type(exc).__name__, str(exc)[:100])
