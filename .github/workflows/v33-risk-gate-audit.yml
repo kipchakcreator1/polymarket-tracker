@@ -36,12 +36,22 @@ jobs:
         env:
           PYTHONPATH: .
         run: python tools/v33_wallet_gate_shadow_audit.py --live
+      - name: Read-only checkout of latest v3.3 research snapshots
+        uses: actions/checkout@v4
+        with:
+          ref: v3.3-wallet-research
+          path: v33-snapshot
+          persist-credentials: false
+          fetch-depth: 1
       - name: Build research-only top-300 shadow verification queue
         env:
           PYTHONPATH: .
+          V33_SHADOW_INPUT_DIR: v33-snapshot
+          V33_SHADOW_INPUT_REF: v3.3-wallet-research
         run: |
           python -m py_compile tools/v33_research_shadow_queue.py tests/test_v33_research_shadow_queue.py
           python -m unittest discover -s tests -p 'test_v33_research_shadow_queue.py' -v
+          echo "Snapshot SHA: $(git -C v33-snapshot rev-parse HEAD)"
           python tools/v33_research_shadow_queue.py
       - name: Upload public aggregate diagnostic (no Telegram or wallet keys)
         if: always()
