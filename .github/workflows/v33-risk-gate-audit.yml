@@ -53,6 +53,14 @@ jobs:
           python -m unittest discover -s tests -p 'test_v33_research_shadow_queue.py' -v
           echo "Snapshot SHA: $(git -C v33-snapshot rev-parse HEAD)"
           python tools/v33_research_shadow_queue.py
+      - name: Enumerate 1200 sports-active shadow wallets from full universe (NO MONITORING)
+        env:
+          PYTHONPATH: .
+          V33_BROAD_INPUT_DIR: v33-snapshot
+        run: |
+          python -m py_compile tools/v33_broad_sports_research.py tests/test_v33_broad_sports_research.py
+          python -m unittest discover -s tests -p 'test_v33_broad_sports_research.py' -v
+          python tools/v33_broad_sports_research.py
       - name: Test durable rejected quote archival and old-first resolution audit
         env:
           PYTHONPATH: .
@@ -94,5 +102,6 @@ jobs:
             artifacts/v33-shadow-wallet-queue.json
             artifacts/v33-copyability-gate.json
             artifacts/v33-shadow-resolution-probe.json
+            artifacts/v33-broad-sports-watch-research.json
           if-no-files-found: ignore
           retention-days: 7
