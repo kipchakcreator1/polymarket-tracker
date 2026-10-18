@@ -25,6 +25,21 @@ class BotTests(unittest.TestCase):
         focus.start()
         self.addCleanup(focus.stop)
 
+
+    def test_active_portfolio_transient_error_retries(self):
+        response = {"data": [], "pagination": {"has_more": False}}
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=[TimeoutError("temporary"), response]) as request:
+            self.assertEqual(bot.fetch_open_positions(W), [])
+            self.assertEqual(request.call_count, 2)
+
+    def test_active_portfolio_repeated_error_remains_unverified(self):
+        with mock.patch.object(bot.v2, "request_json",
+                               side_effect=TimeoutError("down")) as request:
+            with self.assertRaises(TimeoutError):
+                bot.fetch_open_positions(W)
+            self.assertEqual(request.call_count, 2)
+
     def test_secret_validation_keeps_distinct_tokens(self):
         with self.assertRaises(ValueError):
             bot.validate_route({"TELEGRAM_V33_BOT_TOKEN": "abc",
