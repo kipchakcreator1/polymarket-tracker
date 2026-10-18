@@ -214,6 +214,13 @@ jobs:
           python -m py_compile tools/v33_copyability_validation.py tests/test_v33_copyability_validation.py
           python -m unittest discover -s tests -p 'test_v33_copyability_validation.py' -v
           python tools/v33_copyability_validation.py
+      - name: Confirm exact archived sports risk reasons remain observational
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_risk_reason_outcome_audit.py tests/test_v33_risk_reason_outcome_audit.py
+          python -m unittest discover -s tests -p 'test_v33_risk_reason_outcome_audit.py' -v
+          python tools/v33_risk_reason_outcome_audit.py
       - name: Regression tests for durable archive and noncausal paper cohorts
         env:
           PYTHONPATH: .
@@ -237,5 +244,6 @@ jobs:
             artifacts/v33-broad-sports-deep-paging.json
             artifacts/v33-350-live-pilot-health.json
             artifacts/v33-live-state-aggregate.json
+            artifacts/v33-risk-reason-settlement.json
           if-no-files-found: ignore
           retention-days: 7
