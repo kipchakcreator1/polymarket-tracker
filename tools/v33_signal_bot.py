@@ -480,11 +480,17 @@ def recent_form_reason(state, wallet, now):
             # Distinguish rate/network failures from exhausted pagination.
             # These are diagnostic counters only: neither bypasses risk checks.
             if "Settled-loss history incomplete after" in str(exc):
-                mark(state, "recent_history_page_cap")
+                diagnostic = "recent_history_page_cap"
             elif "pagination" in str(exc).lower():
-                mark(state, "recent_history_pagination_invalid")
+                diagnostic = "recent_history_pagination_invalid"
+            elif isinstance(exc, ValueError):
+                diagnostic = "recent_history_data_invalid"
+            elif isinstance(exc, (TimeoutError, OSError)):
+                diagnostic = "recent_history_transport_error"
             else:
-                mark(state, "recent_history_api_or_data_error")
+                diagnostic = "recent_history_api_or_data_error"
+            cache[wallet]["error_reason"] = diagnostic
+            mark(state, diagnostic)
             print("V33 RECENT FORM CACHED WARNING:", wallet[:12],
                   type(exc).__name__, str(exc)[:110])
             return "recent_history_unverified"
