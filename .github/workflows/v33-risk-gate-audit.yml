@@ -78,6 +78,14 @@ jobs:
         env:
           PYTHONPATH: .
         run: python -u tools/v33_pagination_capacity_benchmark.py
+      - name: Verify capped heavy wallets with read-only deeper pagination
+        continue-on-error: true
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m py_compile tools/v33_heavy_wallet_deep_paging.py tests/test_v33_heavy_wallet_deep_paging.py
+          python -m unittest discover -s tests -p 'test_v33_heavy_wallet_deep_paging.py' -v
+          python tools/v33_heavy_wallet_deep_paging.py
       - name: Test durable rejected quote archival and old-first resolution audit
         env:
           PYTHONPATH: .
@@ -121,5 +129,6 @@ jobs:
             artifacts/v33-shadow-resolution-probe.json
             artifacts/v33-broad-sports-watch-research.json
             artifacts/v33-broad-sports-pagination-benchmark.json
+            artifacts/v33-broad-sports-deep-paging.json
           if-no-files-found: ignore
           retention-days: 7
