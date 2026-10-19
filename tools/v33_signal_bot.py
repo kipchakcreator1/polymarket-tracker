@@ -277,7 +277,17 @@ def position_activity_timestamp(value, now):
     try:
         raw = float(value)
     except (ValueError, TypeError, OverflowError):
-        raise ValueError("Position activity timestamp missing or nonnumeric")
+        # The API may encode the same instant as an ISO-8601 timestamp.
+        # Only timezone-aware strings are safe to convert to Unix seconds.
+        if not isinstance(value, str):
+            raise ValueError("Position activity timestamp missing or nonnumeric")
+        try:
+            parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError("timezone required")
+            raw = parsed.timestamp()
+        except (ValueError, TypeError, OverflowError):
+            raise ValueError("Position activity timestamp missing or nonnumeric")
     if not math.isfinite(raw):
         raise ValueError("Position activity timestamp not finite")
     if raw >= 1e12:
