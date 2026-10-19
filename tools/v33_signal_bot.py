@@ -302,8 +302,10 @@ def position_activity_timestamp(value, now):
     # now was sampled BEFORE network polling. Real API responses can be
     # minutes later, so compare to actual response-clock as well.
     latest = max(int(now), int(time.time())) + 120
-    if stamp <= 0 or stamp > latest:
-        raise ValueError("Position activity timestamp invalid")
+    if stamp <= 0:
+        raise ValueError("Position activity timestamp nonpositive")
+    if stamp > latest:
+        raise ValueError("Position activity timestamp future")
     return stamp
 
 
@@ -515,6 +517,10 @@ def recent_form_reason(state, wallet, now):
                     diagnostic = "recent_history_timestamp_missing"
                 elif "timestamp not finite" in detail:
                     diagnostic = "recent_history_timestamp_nonfinite"
+                elif "timestamp nonpositive" in detail:
+                    diagnostic = "recent_history_timestamp_nonpositive"
+                elif "timestamp future" in detail:
+                    diagnostic = "recent_history_timestamp_future"
                 elif "timestamp invalid" in detail:
                     diagnostic = "recent_history_timestamp_out_of_range"
                 elif "timestamp" in detail.lower():
