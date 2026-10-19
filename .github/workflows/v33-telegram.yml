@@ -1,6 +1,7 @@
 name: Tracker v3.3 Telegram (separate bot)
 
 # Distinct v3.3 bot, separate research branch and state.
+# Deploy timestamp parsing fix with offline regression tests.
 # Does not use or modify production v3.1 or experimental v3.2 bot/state.
 on:
   push:
