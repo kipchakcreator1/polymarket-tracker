@@ -484,7 +484,21 @@ def recent_form_reason(state, wallet, now):
             elif "pagination" in str(exc).lower():
                 diagnostic = "recent_history_pagination_invalid"
             elif isinstance(exc, ValueError):
-                diagnostic = "recent_history_data_invalid"
+                detail = str(exc)
+                if "wallet identity mismatch" in detail:
+                    diagnostic = "recent_history_wallet_mismatch"
+                elif "condition or outcome identity" in detail:
+                    diagnostic = "recent_history_missing_identity"
+                elif "position PnL" in detail or "realized PnL" in detail:
+                    diagnostic = "recent_history_invalid_pnl"
+                elif "settled losing position" in detail:
+                    diagnostic = "recent_history_invalid_settlement"
+                elif "pagination" in detail.lower():
+                    diagnostic = "recent_history_pagination_invalid"
+                elif "timestamp" in detail.lower():
+                    diagnostic = "recent_history_invalid_timestamp"
+                else:
+                    diagnostic = "recent_history_data_invalid"
             elif isinstance(exc, (TimeoutError, OSError)):
                 diagnostic = "recent_history_transport_error"
             else:
