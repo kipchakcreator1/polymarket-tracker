@@ -50,7 +50,7 @@ jobs:
           PYTHONPATH: .
           # Test under the same minimum source BUY as the live process.
           V33_MIN_TRADE_USD: '35'
-          V33_MONITOR_MAX: '350'
+          V33_MONITOR_MAX: '500'
           V33_MAX_ALERTS: '10'
           V33_MARKET_FOCUS: 'sports_btc'
           # Safety regression: wallet with many screenshot-confirmed settled UFC losses.
@@ -66,10 +66,10 @@ jobs:
           TELEGRAM_V32_BOT_TOKEN: ${{ secrets.TELEGRAM_V32_BOT_TOKEN }}
           TELEGRAM_V33_BOT_TOKEN: ${{ secrets.TELEGRAM_V33_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          V33_MONITOR_MAX: '350'
-          # BOUNDED 350-WALLET PILOT: +46 risk-qualified wallets in current
-          # shortlist snapshot. Roll back both V33_MONITOR_MAX values to 300
-          # if request_errors/poll_gaps or runtime regress. No filter changes.
+          V33_MONITOR_MAX: '500'
+          # BOUNDED 500-WALLET EXPANSION: depends on refreshed research shortlist.
+          # Roll back both V33_MONITOR_MAX values to 350 if request_errors,
+          # poll_gaps or runtime regress. No BUY risk filter changes.
           # Dedicated OPEN-position research alerts, NOT fresh BUY.
           # Scan 4 wallets per poll, cap 3 clearly labeled OPEN messages/hour.
           V33_OPEN_ALERTS_ENABLED: '1'
