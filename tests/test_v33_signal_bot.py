@@ -823,6 +823,19 @@ class BotTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     bot.position_activity_timestamp(value, at)
 
+    def test_timestamp_error_diagnostics_fail_closed(self):
+        for raw, expected in ((None, "recent_history_timestamp_missing"),
+                              (float("inf"), "recent_history_timestamp_nonfinite"),
+                              (NOW + 10**12, "recent_history_timestamp_out_of_range")):
+            state = bot.blank_state()
+            with mock.patch.object(bot, "fetch_recent_results",
+                                   side_effect=lambda wallet, now: bot.position_activity_timestamp(raw, now)):
+                with mock.patch.object(bot.time, "time", return_value=NOW):
+                    self.assertEqual(bot.recent_form_reason(state, W, NOW),
+                                     "recent_history_unverified")
+            self.assertEqual(state["recent_form_cache"][W]["error_reason"], expected)
+            self.assertEqual(state["counters"][expected], 1)
+
     def test_recent_v2_rejects_incomplete_or_unverifiable_losers(self):
         row = {"proxy_wallet": W, "condition_id": COND, "token_id": TOKEN,
                "last_event_at": NOW, "status": "REDEEMABLE",
