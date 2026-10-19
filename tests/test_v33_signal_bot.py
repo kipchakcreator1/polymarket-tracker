@@ -795,7 +795,7 @@ class BotTests(unittest.TestCase):
                 (at+100)*1000,at),at+100)
             self.assertEqual(bot.position_activity_timestamp(
                 at+100,at),at+100)
-            with self.assertRaisesRegex(ValueError,"invalid"):
+            with self.assertRaisesRegex(ValueError,"future"):
                 bot.position_activity_timestamp((at+900)*1000,at)
         with self.assertRaises(ValueError):
             bot.position_activity_timestamp(None,at)
