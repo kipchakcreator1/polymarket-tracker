@@ -354,6 +354,19 @@ def fetch_recent_results(wallet, now):
                 token = str(item.get("token_id") or "")
                 if not v32.discovery.CONDITION_RE.fullmatch(condition) or not token:
                     raise ValueError("Position lacks condition or outcome identity")
+                # REDEEMABLE_LOST can include unrelated non-losing rows.
+                # Verify status and PnL before requiring activity timestamps
+                # for rows that cannot affect the settled-loss risk inventory.
+                if status == "REDEEMABLE_LOST":
+                    if item.get("status") != "REDEEMABLE" or item.get("redeemable") is not True:
+                        raise ValueError("Cannot verify settled losing position")
+                    realized = v2.asfloat(item.get("realized_pnl"), float("nan"))
+                    unrealized = v2.asfloat(item.get("unrealized_pnl"), float("nan"))
+                    pnl = realized + unrealized
+                    if not math.isfinite(pnl):
+                        raise ValueError("Missing/nonfinite recent position PnL")
+                    if pnl >= -0.01:
+                        continue
                 timestamp = position_activity_timestamp(
                     item.get("last_event_at"), now)
                 if status == "CLOSED":
@@ -361,13 +374,9 @@ def fetch_recent_results(wallet, now):
                         raise ValueError("Expected closed position")
                     pnl = v2.asfloat(item.get("realized_pnl"), float("nan"))
                 else:
-                    if item.get("status") != "REDEEMABLE" or item.get("redeemable") is not True:
-                        raise ValueError("Cannot verify settled losing position")
-                    realized = v2.asfloat(item.get("realized_pnl"), float("nan"))
-                    unrealized = v2.asfloat(item.get("unrealized_pnl"), float("nan"))
-                    pnl = realized + unrealized
-                    if pnl >= -0.01:
-                        continue  # the API can return unrelated redeemables
+                    # Already validated above; confirmed losses still require
+                    # a valid timestamp and remain subject to every veto.
+                    pass
                 if not math.isfinite(pnl):
                     raise ValueError("Missing/nonfinite recent position PnL")
                 data.append({
