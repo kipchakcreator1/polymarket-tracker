@@ -826,7 +826,8 @@ class BotTests(unittest.TestCase):
     def test_timestamp_error_diagnostics_fail_closed(self):
         for raw, expected in ((None, "recent_history_timestamp_missing"),
                               (float("inf"), "recent_history_timestamp_nonfinite"),
-                              (NOW + 900, "recent_history_timestamp_out_of_range")):
+                              (NOW + 900, "recent_history_timestamp_future"),
+                              (0, "recent_history_timestamp_nonpositive")):
             state = bot.blank_state()
             with mock.patch.object(bot, "fetch_recent_results",
                                    side_effect=lambda wallet, now: bot.position_activity_timestamp(raw, now)):
