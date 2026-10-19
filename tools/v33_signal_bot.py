@@ -21,7 +21,7 @@ import paper_tracker_v31 as paper
 VERSION = 33
 SHORTLIST = Path("research/v33_wallet_shortlist.json")
 STATE = Path("research/v33_signal_state.json")
-MAX_WALLETS = max(1, min(350, int(os.getenv("V33_MONITOR_MAX", "300"))))
+MAX_WALLETS = max(1, min(500, int(os.getenv("V33_MONITOR_MAX", "300"))))
 MAX_ALERTS = max(1, min(12, int(os.getenv("V33_MAX_ALERTS", "6"))))
 REPEAT_BUY_COOLDOWN_SECONDS = 1800  # New fill on same market after 30m is new information
 AGGREGATE_BUY_WINDOW = 180  # Keep short sequences of smaller BUY fills together
