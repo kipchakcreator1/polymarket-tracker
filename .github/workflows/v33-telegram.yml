@@ -232,6 +232,11 @@ jobs:
           for reason in ("recent_history_page_cap",
                          "recent_history_pagination_invalid",
                          "recent_history_data_invalid",
+                         "recent_history_wallet_mismatch",
+                         "recent_history_missing_identity",
+                         "recent_history_invalid_pnl",
+                         "recent_history_invalid_settlement",
+                         "recent_history_invalid_timestamp",
                          "recent_history_transport_error",
                          "recent_history_api_or_data_error"):
               print(f"  - {reason}: {counts.get(reason, 0)}")
