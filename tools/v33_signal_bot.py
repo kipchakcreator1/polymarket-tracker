@@ -290,8 +290,14 @@ def position_activity_timestamp(value, now):
             raise ValueError("Position activity timestamp missing or nonnumeric")
     if not math.isfinite(raw):
         raise ValueError("Position activity timestamp not finite")
-    if raw >= 1e12:
-        raw /= 1000.0  # Some API clients expose Unix milliseconds.
+    # Never silently interpret microseconds/nanoseconds as milliseconds.
+    # v2 clients may return any of these Unix timestamp precisions.
+    if raw >= 1e17:
+        raw /= 1e9
+    elif raw >= 1e14:
+        raw /= 1e6
+    elif raw >= 1e11:
+        raw /= 1e3
     stamp = int(raw)
     # now was sampled BEFORE network polling. Real API responses can be
     # minutes later, so compare to actual response-clock as well.
