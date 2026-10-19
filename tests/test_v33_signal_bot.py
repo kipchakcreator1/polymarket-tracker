@@ -800,6 +800,20 @@ class BotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bot.position_activity_timestamp(None,at)
 
+    def test_timezone_aware_iso_position_timestamp(self):
+        at = 1792223000
+        from datetime import datetime, timezone
+        iso = datetime.fromtimestamp(at, timezone.utc).isoformat()
+        with mock.patch.object(bot.time, "time", return_value=at):
+            self.assertEqual(bot.position_activity_timestamp(iso, at), at)
+            self.assertEqual(bot.position_activity_timestamp(
+                iso.replace("+00:00", "Z"), at), at)
+            with self.assertRaises(ValueError):
+                bot.position_activity_timestamp(iso.replace("+00:00", ""), at)
+            with self.assertRaises(ValueError):
+                bot.position_activity_timestamp(
+                    datetime.fromtimestamp(at+900, timezone.utc).isoformat(), at)
+
     def test_recent_v2_rejects_incomplete_or_unverifiable_losers(self):
         row = {"proxy_wallet": W, "condition_id": COND, "token_id": TOKEN,
                "last_event_at": NOW, "status": "REDEEMABLE",
