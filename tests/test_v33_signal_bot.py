@@ -814,6 +814,15 @@ class BotTests(unittest.TestCase):
                 bot.position_activity_timestamp(
                     datetime.fromtimestamp(at+900, timezone.utc).isoformat(), at)
 
+    def test_position_timestamp_unix_precisions(self):
+        at = 1792223000
+        with mock.patch.object(bot.time, "time", return_value=at):
+            for value in (at, at * 1000, at * 1000000, at * 1000000000):
+                self.assertEqual(bot.position_activity_timestamp(value, at), at)
+            for value in (0, -1, float("inf"), (at+900)*1000000000):
+                with self.assertRaises(ValueError):
+                    bot.position_activity_timestamp(value, at)
+
     def test_recent_v2_rejects_incomplete_or_unverifiable_losers(self):
         row = {"proxy_wallet": W, "condition_id": COND, "token_id": TOKEN,
                "last_event_at": NOW, "status": "REDEEMABLE",
