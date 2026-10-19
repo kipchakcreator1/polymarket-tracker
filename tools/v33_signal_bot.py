@@ -511,6 +511,12 @@ def recent_form_reason(state, wallet, now):
                     diagnostic = "recent_history_invalid_settlement"
                 elif "pagination" in detail.lower():
                     diagnostic = "recent_history_pagination_invalid"
+                elif "timestamp missing or nonnumeric" in detail:
+                    diagnostic = "recent_history_timestamp_missing"
+                elif "timestamp not finite" in detail:
+                    diagnostic = "recent_history_timestamp_nonfinite"
+                elif "timestamp invalid" in detail:
+                    diagnostic = "recent_history_timestamp_out_of_range"
                 elif "timestamp" in detail.lower():
                     diagnostic = "recent_history_invalid_timestamp"
                 else:
