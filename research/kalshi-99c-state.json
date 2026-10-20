@@ -1,5 +1,5 @@
 {
-  "cash_usd": "0.14",
+  "cash_usd": "0.21",
   "history": [
     {
       "baseline": "PRICE_ONLY",
@@ -18,10 +18,7 @@
       "ticker": "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4",
       "title": "New York G over 3.5 points scored",
       "won": true
-    }
-  ],
-  "mode": "PAPER_ONLY",
-  "positions": [
+    },
     {
       "baseline": "PRICE_ONLY",
       "close_time": "2026-10-22T15:00:00+00:00",
@@ -29,17 +26,39 @@
       "entry_time": "2026-10-18T17:51:49.063605+00:00",
       "fee_estimated_usd": "0.01",
       "independent_probability": null,
+      "payout_usd": "4.00",
+      "price": "0.9800",
+      "qty": 4,
+      "realized_pnl_usd": "0.07",
+      "result": "yes",
+      "settled_at": "2026-10-20T17:11:57.320816+00:00",
+      "side": "yes",
+      "ticker": "KXSAUDIPLTOTAL-26OCT20DIRRIY-1",
+      "title": "Will over 0.5 goals be scored?",
+      "won": true
+    }
+  ],
+  "mode": "PAPER_ONLY",
+  "positions": [
+    {
+      "baseline": "PRICE_ONLY",
+      "close_time": "2026-10-26T19:30:00+00:00",
+      "cost_usd": "3.93",
+      "entry_time": "2026-10-20T17:11:57.074680+00:00",
+      "fee_estimated_usd": "0.01",
+      "independent_probability": null,
       "price": "0.9800",
       "qty": 4,
       "side": "yes",
-      "ticker": "KXSAUDIPLTOTAL-26OCT20DIRRIY-1",
-      "title": "Will over 0.5 goals be scored?"
+      "ticker": "KXNCAAFTEAMTOTAL-26OCT24BYUUCF-BYU10",
+      "title": "BYU over 9.5 points scored"
     }
   ],
   "schema": 1,
   "seen": [
     "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4:yes",
-    "KXSAUDIPLTOTAL-26OCT20DIRRIY-1:yes"
+    "KXSAUDIPLTOTAL-26OCT20DIRRIY-1:yes",
+    "KXNCAAFTEAMTOTAL-26OCT24BYUUCF-BYU10:yes"
   ],
   "starting_usd": "4.00"
 }
