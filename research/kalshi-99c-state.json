@@ -1,5 +1,5 @@
 {
-  "cash_usd": "0.28",
+  "cash_usd": "0.35",
   "history": [
     {
       "baseline": "PRICE_ONLY",
@@ -54,10 +54,7 @@
       "ticker": "KXNCAAFTEAMTOTAL-26OCT24BYUUCF-BYU10",
       "title": "BYU over 9.5 points scored",
       "won": true
-    }
-  ],
-  "mode": "PAPER_ONLY",
-  "positions": [
+    },
     {
       "baseline": "PRICE_ONLY",
       "close_time": "2026-10-29T00:15:00+00:00",
@@ -65,11 +62,32 @@
       "entry_time": "2026-10-24T21:05:24.720191+00:00",
       "fee_estimated_usd": "0.01",
       "independent_probability": null,
+      "payout_usd": "4.00",
       "price": "0.9800",
       "qty": 4,
+      "realized_pnl_usd": "0.07",
+      "result": "no",
+      "settled_at": "2026-10-27T03:53:32.624134+00:00",
       "side": "no",
       "ticker": "KXNFLTD-26OCT26DALPHI-DALRFLOURNOY19-2",
-      "title": "Ryan Flournoy: 2+ touchdowns"
+      "title": "Ryan Flournoy: 2+ touchdowns",
+      "won": true
+    }
+  ],
+  "mode": "PAPER_ONLY",
+  "positions": [
+    {
+      "baseline": "PRICE_ONLY",
+      "close_time": "2026-11-02T16:00:00+00:00",
+      "cost_usd": "3.93",
+      "entry_time": "2026-10-27T03:53:32.359775+00:00",
+      "fee_estimated_usd": "0.01",
+      "independent_probability": null,
+      "price": "0.9800",
+      "qty": 4,
+      "side": "yes",
+      "ticker": "KXNCAAFGAME-26OCT31NDNAVY-ND",
+      "title": "Notre Dame wins"
     }
   ],
   "schema": 1,
@@ -77,7 +95,8 @@
     "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4:yes",
     "KXSAUDIPLTOTAL-26OCT20DIRRIY-1:yes",
     "KXNCAAFTEAMTOTAL-26OCT24BYUUCF-BYU10:yes",
-    "KXNFLTD-26OCT26DALPHI-DALRFLOURNOY19-2:no"
+    "KXNFLTD-26OCT26DALPHI-DALRFLOURNOY19-2:no",
+    "KXNCAAFGAME-26OCT31NDNAVY-ND:yes"
   ],
   "starting_usd": "4.00"
 }
