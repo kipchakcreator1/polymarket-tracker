@@ -108,10 +108,7 @@
       "ticker": "KXNCAAWBGAME-26NOV02WOFNCST-WOF",
       "title": "Wofford wins",
       "won": true
-    }
-  ],
-  "mode": "PAPER_ONLY",
-  "positions": [
+    },
     {
       "baseline": "PRICE_ONLY",
       "close_time": "2026-11-09T01:00:00+00:00",
@@ -119,13 +116,20 @@
       "entry_time": "2026-11-03T00:15:11.589007+00:00",
       "fee_estimated_usd": "0.01",
       "independent_probability": null,
+      "payout_usd": "0.00",
       "price": "0.9800",
       "qty": 4,
+      "realized_pnl_usd": "-3.93",
+      "result": "yes",
+      "settled_at": "2026-11-07T03:11:19.352538+00:00",
       "side": "no",
       "ticker": "KXNCAAF1HTOTAL-26NOV06NEBILL-7",
-      "title": "Over 6.5 1H points scored"
+      "title": "Over 6.5 1H points scored",
+      "won": false
     }
   ],
+  "mode": "PAPER_ONLY",
+  "positions": [],
   "schema": 1,
   "seen": [
     "KXNFLTEAMTOTAL-26OCT18NONYG-NYG4:yes",
